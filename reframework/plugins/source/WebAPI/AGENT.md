@@ -230,8 +230,16 @@ For writing Lua scripts and C# plugins:
 
 ### C# scripting (REFramework.NET)
   - [Introduction](https://cursey.github.io/reframework-book/api_cs/general/README.html) — `[PluginEntryPoint]`, `[MethodHook]`, `[Callback]`, typed proxies, `ManagedObject`, `TypeDefinition`
-  - [Notes on threading](https://cursey.github.io/reframework-book/api_cs/general/Notes-On-Threading.html)
+  - [API, TDB & VM Reference](https://cursey.github.io/reframework-book/api_cs/general/api-reference.html) — `API` static class, `TDB`, managed/native singletons, logging
+  - [Type System](https://cursey.github.io/reframework-book/api_cs/general/type-system.html) — `TypeDefinition`, `MethodDefinition`, `FieldDefinition`, runtime reflection
+  - [Attributes](https://cursey.github.io/reframework-book/api_cs/general/attributes.html) — `[PluginEntryPoint]`, `[Callback]`, `[MethodHook]` attribute reference
+  - [Method Hooks](https://cursey.github.io/reframework-book/api_cs/general/hooks.html) — Pre/post hooks, `Span<ulong> args`, return value modification, skip original
+  - [Typed Proxies](https://cursey.github.io/reframework-book/api_cs/general/typed-proxies.html) — Generated interfaces, `.As<T>()`, property access, collection iteration (`IDictionary`, `IList`, `ISet`)
+  - [ManagedObject & IObject](https://cursey.github.io/reframework-book/api_cs/general/managed-objects.html) — Reflection-style access, `GetField`, `Call`, `NativeObject`, lifetime/`Globalize()`
+  - [Arrays](https://cursey.github.io/reframework-book/api_cs/general/arrays.html) — `SystemArray` creation, reading, writing game arrays
+  - [Notes on Threading](https://cursey.github.io/reframework-book/api_cs/general/Notes-On-Threading.html)
   - [Benchmarks](https://cursey.github.io/reframework-book/api_cs/general/benchmarks.html)
+  - [Example: RE9 Additional Save Slots](https://cursey.github.io/reframework-book/api_cs/examples/additional-save-slots.html) — Full mod walkthrough
 
 ### Tools
   - [Object Explorer](https://cursey.github.io/reframework-book/object_explorer/object_explorer.html) — understanding the type system, singletons, fields, methods
