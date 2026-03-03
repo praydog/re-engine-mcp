@@ -44,7 +44,7 @@ public static class PipeTools
         => await Pipe.Request("get_errors") ?? """{"error":"pipe not connected"}""";
 
     [McpServerTool(Name = "reframework_get_log")]
-    [Description("Get recent log entries from REFramework.NET (via named pipe, works even when web API is down)")]
+    [Description("Get recent log entries from REFramework.NET (via named pipe, works even when web API is down). Returns the full ring buffer — contains output from the most recent compile cycle. To get isolated output: clear_log BEFORE editing a .cs file, then wait_compile, then get_log.")]
     public static async Task<string> GetLog()
         => await Pipe.Request("get_log") ?? """{"error":"pipe not connected"}""";
 
@@ -64,7 +64,7 @@ public static class PipeTools
         => await Pipe.Request("clear_errors") ?? """{"error":"pipe not connected"}""";
 
     [McpServerTool(Name = "reframework_clear_log")]
-    [Description("Clear the log ring buffer (via named pipe). Use to reset log state for clean monitoring.")]
+    [Description("Clear the log ring buffer (via named pipe). Call BEFORE editing a .cs file if you need isolated output from the next compile cycle — the plugin runs at compile time, so output is already in the buffer by the time wait_compile returns.")]
     public static async Task<string> ClearLog()
         => await Pipe.Request("clear_log") ?? """{"error":"pipe not connected"}""";
 
@@ -74,7 +74,7 @@ public static class PipeTools
         => await Pipe.Request("compile_status") ?? """{"error":"pipe not connected"}""";
 
     [McpServerTool(Name = "reframework_wait_compile")]
-    [Description("Block until the current compile cycle finishes (or timeout). Returns compileCycleId, status, errorCount, timedOut. Use after editing a .cs file instead of sleeping — waits for the hot-reload to complete.")]
+    [Description("Block until the current compile cycle finishes (or timeout). Returns compileCycleId, status, errorCount, timedOut. Use after editing a .cs file instead of sleeping — waits for the hot-reload to complete. May return pipe not connected if the named pipe is not active yet — fall back to compile_status in that case.")]
     public static async Task<string> WaitCompile(
         [Description("Timeout in milliseconds (default 15000)")] int timeout = 15000)
         => await Pipe.Request("wait_compile", new() { ["timeout"] = timeout }, readTimeoutMs: timeout + 5000)

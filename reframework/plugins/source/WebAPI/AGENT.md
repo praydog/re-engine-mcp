@@ -31,7 +31,7 @@ The most powerful tool. Starts from a singleton or address, applies steps sequen
 |------|--------|----------|
 | `field` | `name` | Follow a reference field |
 | `method` | `name`, `signature?` | Call 0-param method, follow returned object |
-| `array` | `offset?`, `count?` | Expand into array elements (fans out) |
+| `array` | `offset?`, `count?` | Expand into array elements (fans out). **Only works on `T[]` arrays**, NOT `List<T>`, `Dictionary`, etc. For `List<T>`, navigate to the `_items` field first, or use `collect` with getter methods. |
 | `filter` | `method`, `value?` (default `"True"`) | Keep objects where method result matches value |
 | `collect` | `methods` (string[]) | **Terminal.** Read multiple methods, return values |
 
@@ -118,23 +118,73 @@ These differ per game. Use `get_singletons` to discover them.
 
 ## Plugin Development
 
-**Hot reload:** Saving a `.cs` file in `reframework/plugins/source/` triggers automatic recompilation. No build step needed.
+**Hot reload:** Saving a `.cs` file in `reframework/plugins/source/` triggers automatic recompilation of ALL plugins. Every plugin unloads (hooks removed, state lost) and reloads. No build step needed — do NOT run `dotnet build`.
 
 **Workflow:**
 1. Write/edit the `.cs` file
-2. `wait_compile` — blocks until hot-reload finishes
+2. `wait_compile` — blocks until hot-reload finishes (if it returns `pipe not connected`, fall back to `compile_status`)
 3. `compile_status` — quick health check (ok/error, error count)
 4. `get_errors` — only if you need full error text
-5. `get_plugins` — verify plugin is loaded and alive
+5. `get_log` — read plugin output (the ring buffer includes output from the compile that just finished)
 
-**Do NOT** run `dotnet build` or any external build command.
+**Reading test output from plugins:**
+The correct sequence is: edit file → `wait_compile` → `get_log`. Do NOT `clear_log` between edit and read — the plugin runs at compile time and the output is already in the buffer by the time `wait_compile` returns. If you need a clean log, `clear_log` BEFORE editing the file.
+
+**Forcing a recompile** when nothing changed: make a trivial edit (add a comment) and save. The file watcher triggers on any write.
+
+## Discovering Field Names
+
+**Always use `summary` to find exact field names before writing plugin code.** Field names in RE Engine are not guessable — `_GameSlotSaveHandlers` not `_SaveSlotHandlerDict`, `_AcquiredIDSet` not `_AcquiredItemIDSet`. A wrong name silently returns null via `GetField()` and wastes a compile cycle.
+
+Pattern: `get_singleton` → `summary` → note exact field names → use them in code.
+
+## ManagedObject vs Typed Proxy (Plugin Authors)
+
+Two ways to access game objects in C# plugins:
+
+**ManagedObject (untyped, dynamic):**
+```csharp
+var ssm = API.GetManagedSingleton("app.SaveServiceManager");
+var dict = ssm.GetField("_GameSlotSaveHandlers") as ManagedObject;
+int count = (int)dict.Call("get_Count");
+foreach (var item in dict) { /* item is object — cast to IObject for Call() */ }
+```
+
+**Typed proxy (preferred — compile-time safety, properties):**
+```csharp
+var ssm = API.GetManagedSingletonT<app.SaveServiceManager>();
+bool init = ssm.IsInitialized;  // property access, not get_IsInitialized()
+int max = ssm._MaxUseSaveSlotCount;  // field access
+```
+
+**Collection iteration via proxy (preferred for typed access):**
+```csharp
+using Col = REFrameworkNET.Collections;
+var dictMo = (ssm as IObject).GetField("_GameSlotSaveHandlers") as ManagedObject;
+var dict = dictMo.As<Col.IDictionary<string, app.SaveServiceManager.GameSlotSaveHandler>>();
+foreach (var key in dict.Keys) { /* real string */ }
+foreach (var val in dict.Values) { /* typed proxy */ }
+var handler = dict["CharacterManager"]; // indexer works
+```
+
+**Collection iteration via ManagedObject (fallback — works for all collection types):**
+```csharp
+var dict = ssm.GetField("_GameSlotSaveHandlers") as ManagedObject;
+foreach (var item in dict) {
+    // Dictionary: item is ValueType<KeyValuePair<K,V>>
+    var kvp = item as IObject;
+    var key = kvp.Call("get_Key");   // string
+    var val = kvp.Call("get_Value"); // ManagedObject
+}
+```
+ManagedObject foreach works for `Dictionary`, `HashSet`, `List`, `Array`, and any `IEnumerable`. Struct elements (like `KeyValuePair`) come back as `ValueType` — call methods on them via `Call()`.
 
 ## Named Pipe Tools
 
 These work even when the HTTP API is down (connect via `\\.\pipe\REFrameworkNET`):
 `compile_status`, `wait_compile`, `get_errors`, `clear_errors`, `get_log`, `clear_log`, `get_game_info`, `get_plugins`
 
-> **WARNING:** `get_log` returns the full ring buffer and wastes tokens. Use `get_plugins` to check plugin status, `compile_status` for compilation health.
+> **WARNING:** `get_log` returns the full ring buffer. Use `compile_status` for compilation health, `get_plugins` for plugin status. Only use `get_log` when you need actual log output (e.g. reading test results from a plugin).
 
 ## Player Mesh Hierarchy (MHWilds)
 

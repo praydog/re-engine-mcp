@@ -4,6 +4,8 @@ An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that g
 
 Connect Claude (or any MCP client) to a running game and it can inspect every object in memory, read and write fields, call methods, navigate the full type database, search singletons, and chain multi-step queries across the object graph. It turns a running game into a fully introspectable, queryable system that an AI can reason about and manipulate in real time.
 
+But inspection is just the starting point. The agent can write C# plugins, deploy them into the running game via hot-reload, read back compile errors and logs, fix issues, and iterate -- all autonomously within a single conversation. It's a complete development loop: discover how something works by probing live objects, write code that changes it, test that the change took effect, and repeat until done.
+
 ## What can it do?
 
 With the game running, an AI agent can:
@@ -145,7 +147,17 @@ But the real power is in open-ended requests. You don't need to know the game's 
 - *"Reverse-engineer how the damage formula works, then write a C# plugin that adds a damage log overlay."*
 - *"I want to change the weather to always be sunny. Find the right singleton, figure out the fields, and make it happen."*
 
-The agent has the full type database, every singleton, every field and method in the running game. It can search for types by name, inspect live objects, trace references, write plugins, watch them hot-compile, and iterate -- all in one conversation. You describe what you want; it figures out the internals.
+### Autonomous development
+
+The agent doesn't just read game state -- it can run a full development loop against the live game:
+
+1. **Discover.** Search the type database for relevant singletons, inspect their fields and methods, probe live objects to understand data layouts and collection contents. The agent fans out parallel queries across multiple singletons to find populated collections of the right shape -- scanning `SaveServiceManager`, `ItemManager`, `CharacterManager` etc. to locate `Dictionary`, `HashSet`, `List`, and `Array` fields with real data to test against.
+2. **Write.** Author a C# plugin (or modify an existing one) and save it to the game's `reframework/plugins/source/` directory.
+3. **Build.** The plugin hot-compiles automatically. The agent reads compile status and errors through the MCP server -- no manual checking needed.
+4. **Test.** Deploy test plugins that exercise specific behaviors, read the results from the game log, and verify correctness. If something fails, the agent reads the error, fixes the code, and recompiles -- all without human intervention.
+5. **Iterate.** Repeat until the tests pass. The agent can locate candidate objects, write targeted tests, fix field names or type mismatches from error output, and converge on working code autonomously.
+
+For example: given a C++ API with broken collection iteration, the agent probed live `Dictionary`, `HashSet`, `List`, and `Array` objects across multiple game singletons to characterize the failures, read the C++ source to identify the root cause, wrote a fix, built it, then needed test data. It queried the type database and inspected live singletons to find fields of each collection type that were actually populated -- a `Dictionary<String, GameSlotSaveHandler>` with 37 entries here, a `HashSet<ItemID>` with 113 entries there, a `Dictionary<SaveSlotAddress, SaveSlotInfo>` with struct keys for diversity. It assembled these into a 22-test regression suite covering both ManagedObject and proxy iteration paths, deployed it as a hot-compiled plugin, read back the log, fixed wrong field names from the error output, redeployed, and converged to 22 PASS, 0 FAIL. No human touched the keyboard between "fix the broken enumerator" and the final results.
 
 > **Tip:** Pair with [IDA Pro MCP](https://github.com/mrexodia/ida-pro-mcp) for even deeper reverse engineering. If the IDA database has RE Engine method addresses mapped to names (REFramework ships a Python script for this), the agent can read decompiled function bodies alongside live object inspection. Not required, but powerful when you need to understand what a function actually does rather than just what it's called.
 
