@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "reframework": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": ["run", "--project", "mcp-server"],
+      "env": {
+        "REFRAMEWORK_API_URL": "http://localhost:8899"
+      }
+    }
+  }
+}
