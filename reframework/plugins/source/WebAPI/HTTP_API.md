@@ -170,6 +170,7 @@ Enum values can be passed as integers:
 | `/api/meshes` | Player mesh children: `{ count, meshes: [{ name, label, visible }] }` |
 | `/api/materials` | Per-material visibility for all player meshes |
 | `/api/map` | Current stage (code + name), areaNo, prevStage, quest info |
+| `/api/monsters` | Large monsters on map: `{ count, monsters: [{ id, name, species, health, maxHealth, position, distance }] }` |
 | `/api/singletons` | Managed singleton list with type names, addresses, method/field counts |
 
 ### Convenience Endpoints (POST)

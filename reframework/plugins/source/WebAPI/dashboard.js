@@ -739,6 +739,55 @@ async function updatePalico() {
   }
 }
 
+// ── Monsters (MHWilds) ─────────────────────────────────────────
+
+async function updateMonsters() {
+  try {
+    const d = await fetchJson('/api/monsters');
+    const el = document.getElementById('monsters-content');
+    setDot('monsters-card', !d.error);
+    if (d.error) { el.innerHTML = `<span class='error-msg'>${d.error}</span>`; return; }
+
+    document.getElementById('monsters-count').textContent = `(${d.count})`;
+
+    if (!d.monsters || d.monsters.length === 0) {
+      el.innerHTML = `<span class='error-msg'>No large monsters</span>`;
+      return;
+    }
+
+    // Sort by distance (closest first), null distance last
+    d.monsters.sort((a, b) => (a.distance ?? 9999) - (b.distance ?? 9999));
+
+    el.innerHTML = d.monsters.map(m => {
+      const pct = m.maxHealth > 0 ? m.health / m.maxHealth : 0;
+      const color = hpColor(pct);
+      const hpText = m.health != null ? `${fmt(m.health, 0)} / ${fmt(m.maxHealth, 0)}` : '?';
+      const species = m.species ? `<span class='monster-species'>${esc(m.species)}</span>` : '';
+      const dist = m.distance != null ? `<span class='monster-dist'>${fmt(m.distance, 0)}m</span>` : '';
+      const pos = m.position && m.position.x != null
+        ? `${fmt(m.position.x, 0)}, ${fmt(m.position.y, 0)}, ${fmt(m.position.z, 0)}`
+        : '?';
+
+      return `<div class='monster-row'>
+        <div class='monster-header'>
+          <span><span class='monster-name'>${esc(m.name)}</span>${species}</span>
+          <span class='monster-hp-text'>${hpText}</span>
+        </div>
+        <div class='hp-bar-bg hp-bar-sm'>
+          <div class='hp-bar' style='width:${(pct * 100).toFixed(0)}%;background:${color}'></div>
+        </div>
+        <div class='monster-meta'>
+          <span>pos ${pos}</span>
+          ${dist}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    setDot('monsters-card', false);
+    document.getElementById('monsters-content').innerHTML = `<span class='error-msg'>${e.message}</span>`;
+  }
+}
+
 // ── Enemies (RE9) ───────────────────────────────────────────────────
 
 async function updateEnemies() {
@@ -1040,6 +1089,7 @@ async function initDashboard() {
     '/api/lobby': 'lobby-card',
     '/api/enemies': 'enemies-card',
     '/api/gameinfo': 'gameinfo-card',
+    '/api/monsters': 'monsters-card',
   };
   for (const [ep, cardId] of Object.entries(cardMap)) {
     if (!has(ep)) {
@@ -1061,6 +1111,7 @@ async function initDashboard() {
   if (has('/api/map'))       { updateMap();       setInterval(updateMap, 5000); }
   if (has('/api/chat'))      { updateChat();      setInterval(updateChat, 3000); }
   if (has('/api/huntlog'))   { updateHuntLog();   setInterval(updateHuntLog, 10000); }
+  if (has('/api/monsters'))  { updateMonsters();  setInterval(updateMonsters, 2000); }
   if (has('/api/palico'))    { updatePalico();    setInterval(updatePalico, 5000); }
   if (has('/api/enemies'))   { updateEnemies();   setInterval(updateEnemies, 1000); }
   if (has('/api/gameinfo'))  { updateGameInfo();  setInterval(updateGameInfo, 3000); }

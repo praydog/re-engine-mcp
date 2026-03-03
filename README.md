@@ -147,6 +147,33 @@ But the real power is in open-ended requests. You don't need to know the game's 
 - *"Reverse-engineer how the damage formula works, then write a C# plugin that adds a damage log overlay."*
 - *"I want to change the weather to always be sunny. Find the right singleton, figure out the fields, and make it happen."*
 
+### Real-world example: querying every large monster on the map
+
+A user asked: *"What large monsters are currently loaded? Give me each one's species, HP, max HP, position, and distance from my character."*
+
+The agent had zero prior context about the game's enemy system. It solved this autonomously in ~7 minutes across roughly 25 tool calls:
+
+1. **Get the player's position** via `get_player` -- needed later for distance calculation.
+2. **Find the enemy manager** -- `get_singleton("app.EnemyManager")` to get the root of the enemy object graph.
+3. **Navigate the enemy list** -- a multi-step `chain` query: `EnemyManager` -> `_EnemyList` (a `cManagedArray`) -> `get_Array()` -> expand the array -> filter by `get_CharacterValid=True` -> `get_Context()` -> `get_Em()` -> `Basic` -> filter by `get_IsBoss=True`. This yielded 5 boss-type enemies out of the full enemy pool.
+4. **Resolve monster names** -- called `EnemyDef.EnemyName(ID)` for each boss to get a GUID, then batch-resolved those GUIDs via `localize_guid` to get localized names: Doshaguma, Lala Barina, Rathian, Rathalos, Uth Duna.
+5. **Read HP** -- navigated each enemy's `Context` -> `Chara` -> `HealthManager` and called `get_Health()` / `get_MaxHealth()` to get current and max HP values.
+6. **Read positions** -- called `get_Pos()` on each enemy's `ManageInfo` object to get world coordinates.
+7. **Resolve species names** -- this was the non-obvious part. `EnemyDef.Species(ID)` returns a `SPECIES_Fixed` enum, but `EnemyDef.EmSpeciesName()` expects a non-Fixed `SPECIES` enum. These look identical (same member names like `SPECIES_006`) but have different underlying integer values -- the `_Fixed` variant starts at 0 for `INVARID`, while the non-Fixed variant starts at -1, shifting every subsequent value by 1. The agent discovered this by comparing `_Fixed` and non-Fixed backing fields on a data object (e.g., `IconDef.ENEMY_Fixed.E0002 = 3` vs `IconDef.ENEMY.E0002 = 2`), inferred the offset pattern, corrected the enum values, and got the right species names: Fanged Beast, Temnoceran, Flying Wyvern, Leviathan.
+8. **Compute distances** -- Euclidean 3D distance from each monster's position to the player.
+
+Final output, formatted as a table:
+
+| Monster | Species | HP | Max HP | Position | Distance |
+|---------|---------|---:|-------:|---------:|---------:|
+| Doshaguma | Fanged Beast | 14,400 | 14,400 | (-45.5, 82.7, -462.4) | 512 |
+| Lala Barina | Temnoceran | 10,483 | 10,483 | (144.5, 35.2, 329.6) | 348 |
+| Rathian | Flying Wyvern | 11,772 | 11,794 | (110.9, 37.4, 160.4) | 207 |
+| Rathalos | Flying Wyvern | 13,500 | 13,500 | (231.2, 147.6, 74.5) | 309 |
+| Uth Duna | Leviathan | 20,196 | 20,196 | (56.1, 201.1, -542.5) | 607 |
+
+The user's question was 15 words. They didn't name a single type, field, method, singleton, or enum. The agent discovered the entire object graph, navigated it, handled a non-obvious enum mapping bug, and delivered a formatted answer with computed distances -- all from a cold start in under 7 minutes.
+
 ### Autonomous development
 
 The agent doesn't just read game state -- it can run a full development loop against the live game:

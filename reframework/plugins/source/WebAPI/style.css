@@ -236,6 +236,24 @@ h1 { color: #58a6ff; margin-bottom: 8px; font-size: 1.6em; }
 .huntlog-badge.slay { background: #3d1f1f; color: #f85149; }
 .huntlog-badge.capture { background: #2d3a1f; color: #d29922; }
 
+/* ── Monster list styles (MHWilds) ────────────────────────────────── */
+.monsters-list { display: flex; flex-direction: column; gap: 6px; max-height: 500px; overflow-y: auto; }
+.monster-row {
+  padding: 8px 10px; background: #0d1117; border: 1px solid #21262d; border-radius: 6px;
+}
+.monster-header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.monster-name { color: #c9d1d9; font-weight: 600; font-size: 0.95em; }
+.monster-species { color: #8b949e; font-size: 0.75em; margin-left: 6px; }
+.monster-hp-text { color: #8b949e; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.8em; }
+.monster-meta {
+  display: flex; gap: 12px; margin-top: 4px; font-size: 0.78em; color: #8b949e;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+.monster-meta .monster-dist { color: #58a6ff; }
+
 /* ── Status badges (RE9) ────────────────────────────────────────── */
 .status-badges { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
 .badge {

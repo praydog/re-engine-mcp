@@ -147,6 +147,7 @@ class REFrameworkWebAPI {
                     "/api/meshes" => GetMeshList(),
                     "/api/materials" => GetMaterials(),
                     "/api/map" => GetMapInfo(),
+                    "/api/monsters" => GetMonsters(),
                     "/api/chat" => GetChatHistory(),
                     "/api/huntlog" => GetHuntLog(),
                     "/api/palico" => GetPalicoStats(),
@@ -232,8 +233,8 @@ class REFrameworkWebAPI {
         };
 #if MHWILDS
         endpoints.AddRange(new[] { "/api/player", "/api/lobby", "/api/weather", "/api/equipment",
-            "/api/inventory", "/api/meshes", "/api/materials", "/api/map", "/api/chat",
-            "/api/huntlog", "/api/palico" });
+            "/api/inventory", "/api/meshes", "/api/materials", "/api/map", "/api/monsters",
+            "/api/chat", "/api/huntlog", "/api/palico" });
 #elif RE9
         endpoints.AddRange(new[] { "/api/player", "/api/enemies", "/api/gameinfo" });
 #endif
@@ -1053,6 +1054,127 @@ class REFrameworkWebAPI {
         }
     }
 
+    // ── Monsters (Large Enemies) ───────────────────────────────────
+
+    static object GetMonsters() {
+        try {
+            var em = API.GetManagedSingletonT<app.EnemyManager>();
+            if (em == null) return new { error = "EnemyManager not available" };
+
+            // Player position for distance calculation
+            float? playerX = null, playerY = null, playerZ = null;
+            try {
+                var pm = API.GetManagedSingletonT<app.PlayerManager>();
+                if (pm != null) {
+                    var player = pm.getMasterPlayer();
+                    if (player?.Object?.Transform != null) {
+                        var pp = player.Object.Transform.Position;
+                        playerX = pp.x; playerY = pp.y; playerZ = pp.z;
+                    }
+                }
+            } catch { }
+
+            var nameMap = GetMonsterNameMap();
+            var monsters = new List<object>();
+
+            var emObj = em as REFrameworkNET.IObject;
+            var listObj = emObj?.GetField("_EnemyList") as REFrameworkNET.IObject;
+            if (listObj == null) return new { count = 0, monsters };
+
+            int count = 0;
+            try { count = (int)listObj.Call("get_Count"); } catch { }
+
+            for (int i = 0; i < count; i++) {
+                REFrameworkNET.IObject info;
+                try { info = listObj.Call("get_Item", (object)i) as REFrameworkNET.IObject; } catch { continue; }
+                if (info == null) continue;
+
+                try {
+                    bool charValid = false;
+                    try { charValid = (bool)info.Call("get_CharacterValid"); } catch { }
+                    if (!charValid) continue;
+
+                    var ctx = info.Call("get_Context") as REFrameworkNET.IObject;
+                    if (ctx == null) continue;
+
+                    var emCtx = ctx.Call("get_Em") as REFrameworkNET.IObject;
+                    if (emCtx == null) continue;
+
+                    bool isBoss = false;
+                    try { isBoss = (bool)emCtx.Call("get_IsBoss"); } catch { }
+                    if (!isBoss) continue;
+
+                    int emIdInt = 0;
+                    try { emIdInt = (int)emCtx.Call("get_EmID"); } catch { continue; }
+                    var emId = (app.EnemyDef.ID)emIdInt;
+
+                    // Name
+                    string name = null;
+                    try {
+                        int fixedId = (int)app.EnemyDef.enemyId(emId);
+                        nameMap.TryGetValue(fixedId, out name);
+                    } catch { }
+                    if (string.IsNullOrEmpty(name)) {
+                        try { name = app.EnemyDef.NameString(emId, 0, 0); } catch { }
+                    }
+
+                    // Species — SPECIES_Fixed has +1 offset vs SPECIES (INVARID=0 vs -1)
+                    string species = null;
+                    try {
+                        var speciesFixed = app.EnemyDef.Species(emId);
+                        var speciesEnum = (app.EnemyDef.SPECIES)((int)speciesFixed - 1);
+                        var speciesGuid = app.EnemyDef.EmSpeciesName(speciesEnum, emId);
+                        species = ResolveGuid(speciesGuid);
+                    } catch { }
+
+                    // HP
+                    float? health = null, maxHealth = null;
+                    try {
+                        var charaCtx = ctx.Call("get_Chara") as REFrameworkNET.IObject;
+                        var hm = charaCtx?.Call("get_HealthManager") as REFrameworkNET.IObject;
+                        if (hm != null) {
+                            try { health = (float)hm.Call("get_Health"); } catch { }
+                            try { maxHealth = (float)hm.Call("get_MaxHealth"); } catch { }
+                        }
+                    } catch { }
+
+                    // Position
+                    float? posX = null, posY = null, posZ = null;
+                    try {
+                        var pos = info.Call("get_Pos");
+                        if (pos is REFrameworkNET.IObject posObj) {
+                            posX = (float)posObj.GetField("x");
+                            posY = (float)posObj.GetField("y");
+                            posZ = (float)posObj.GetField("z");
+                        }
+                    } catch { }
+
+                    // Distance from player
+                    float? distance = null;
+                    if (playerX.HasValue && posX.HasValue) {
+                        var dx = posX.Value - playerX.Value;
+                        var dy = posY.Value - playerY.Value;
+                        var dz = posZ.Value - playerZ.Value;
+                        distance = (float)Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                    }
+
+                    monsters.Add(new {
+                        id = emIdInt,
+                        name = name ?? $"Monster {emIdInt}",
+                        species,
+                        health,
+                        maxHealth,
+                        position = new { x = posX, y = posY, z = posZ },
+                        distance
+                    });
+                } catch { }
+            }
+
+            return new { count = monsters.Count, monsters };
+        } catch (Exception e) {
+            return new { error = e.Message };
+        }
+    }
     // ── Hunt Log ──────────────────────────────────────────────────────
 
     // Cache FixedId → monster name, built once from EnemyDef.ID enum

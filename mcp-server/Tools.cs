@@ -108,6 +108,10 @@ public static class ConvenienceTools
     [Description("Get current stage/area, stage name, previous stage, and active quest info (time remaining, elapsed, quest ID)")]
     public static async Task<string> GetMap() => await Http.Get("/api/map");
 
+    [McpServerTool(Name = "reframework_get_monsters")]
+    [Description("Get large monsters on the current map: name, species, HP, max HP, position, distance from player")]
+    public static async Task<string> GetMonsters() => await Http.Get("/api/monsters");
+
     [McpServerTool(Name = "reframework_get_weather")]
     [Description("Get current weather, next weather, blend rates, in-game clock time")]
     public static async Task<string> GetWeather() => await Http.Get("/api/weather");
