@@ -101,18 +101,11 @@ Copy the `reframework/` folder into your game directory. It mirrors the exact fo
 
 REFramework will hot-compile the plugin on next game launch. You should see `[WebAPI] Listening on http://localhost:8899/` in the REFramework log.
 
-### 2. Install the MCP server
+### 2. Connect an MCP client
 
-**Quick install (Claude Code):**
+The repo root contains `.mcp.json` — agents that support workspace-level MCP config (Claude Code, Cursor, etc.) will detect it automatically when you open the project.
 
-```cmd
-cd mcp-server
-install.cmd
-```
-
-This registers the server via `claude mcp add`. Other MCP clients use the manual registration below.
-
-**Manual registration (any MCP client):**
+To register manually with any MCP client, add this to your MCP config:
 
 ```json
 {
@@ -127,6 +120,8 @@ This registers the server via `claude mcp add`. Other MCP clients use the manual
   }
 }
 ```
+
+Or use the helper scripts in `mcp-server/` (`install.cmd` / `install.sh`) to register via the `claude` CLI.
 
 ### 3. Launch the game
 
