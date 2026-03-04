@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs the REFramework MCP server into Claude Code (global/user scope).
+# Registers the REFramework MCP server with Claude Code (uses 'claude' CLI).
 # Run from anywhere: bash install.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -11,4 +11,4 @@ claude mcp add \
   -e REFRAMEWORK_API_URL=http://localhost:8899 \
   -- dotnet run --project "$SCRIPT_DIR"
 
-echo "Done. Restart Claude Code to pick it up."
+echo "Done. Restart your MCP client to pick it up."

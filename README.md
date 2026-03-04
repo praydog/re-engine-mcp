@@ -2,7 +2,7 @@
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that gives AI agents live, programmatic access to any running RE Engine game -- Resident Evil, Monster Hunter, Devil May Cry, Dragon's Dogma, and more.
 
-Connect Claude (or any MCP client) to a running game and it can inspect every object in memory, read and write fields, call methods, navigate the full type database, search singletons, and chain multi-step queries across the object graph. It turns a running game into a fully introspectable, queryable system that an AI can reason about and manipulate in real time.
+Connect any MCP-compatible agent or IDE to a running game and it can inspect every object in memory, read and write fields, call methods, navigate the full type database, search singletons, and chain multi-step queries across the object graph. It turns a running game into a fully introspectable, queryable system that an agent can reason about and manipulate in real time.
 
 But inspection is just the starting point. The agent can write C# plugins, deploy them into the running game via hot-reload, read back compile errors and logs, fix issues, and iterate -- all autonomously within a single conversation. It's a complete development loop: discover how something works by probing live objects, write code that changes it, test that the change took effect, and repeat until done.
 
@@ -24,7 +24,7 @@ With the game running, an AI agent can:
 Three components, each independently useful:
 
 ```
-  Claude / AI Agent
+  AI Agent / MCP Client
         |
         | MCP protocol (stdio)
         v
@@ -103,14 +103,14 @@ REFramework will hot-compile the plugin on next game launch. You should see `[We
 
 ### 2. Install the MCP server
 
-**For Claude Code:**
+**Quick install (Claude Code):**
 
 ```cmd
 cd mcp-server
 install.cmd
 ```
 
-This registers the MCP server with Claude Code via `claude mcp add`. Restart Claude Code to pick it up.
+This registers the server via `claude mcp add`. Other MCP clients use the manual registration below.
 
 **Manual registration (any MCP client):**
 
@@ -134,7 +134,7 @@ Start the game with REFramework loaded. The plugin compiles automatically and st
 
 ## Usage examples
 
-Once connected, you can ask Claude things like:
+Once connected, you can ask your agent things like:
 
 - *"What's my current health and position?"*
 - *"Find the type that manages weather and show me its fields."*
