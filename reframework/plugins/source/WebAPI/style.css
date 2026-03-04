@@ -125,8 +125,24 @@ h1 { color: #58a6ff; margin-bottom: 8px; font-size: 1.6em; }
   font-size: 0.85em;
 }
 .inv-name { color: #c9d1d9; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.inv-qty { color: #8b949e; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.9em; margin-left: 8px; }
+.inv-qty { color: #8b949e; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.9em; margin-left: 8px; white-space: nowrap; }
+.inv-weapon { color: #f0883e; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-key { color: #d2a8ff; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-bar-wrap { display: flex; align-items: center; gap: 6px; margin-left: 8px; flex-shrink: 0; }
+.inv-bar-bg { width: 48px; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
+.inv-bar { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
 
+/* ── Mr. X Tracker styles ─────────────────────────────────────── */
+.stalker-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.stalker-status { padding: 2px 10px; border-radius: 12px; color: #fff; font-weight: 600; font-size: 0.85em; }
+.stalker-state { color: #8b949e; font-size: 0.8em; }
+.stalker-row { display: flex; justify-content: space-between; padding: 2px 0; }
+.stalker-row .label { color: #8b949e; }
+.stalker-row .value { color: #c9d1d9; }
+.stalker-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.stalker-dist-bar { height: 4px; background: #21262d; border-radius: 2px; margin: 4px 0 6px; overflow: hidden; }
+.stalker-dist-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease, background 0.5s ease; }
+.stalker-timers { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.85em; color: #8b949e; }
 /* ── Mesh visibility styles ──────────────────────────────────────── */
 .mesh-list { display: flex; flex-direction: column; gap: 3px; max-height: 400px; overflow-y: auto; }
 .mesh-toggle {

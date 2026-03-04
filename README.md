@@ -58,21 +58,20 @@ Three components, each independently useful:
 
 Any RE Engine title that REFramework supports:
 
-- Monster Hunter Wilds
-- Monster Hunter Rise
-- Resident Evil 2/3/4/7/8/9
-- Devil May Cry 5
-- Dragon's Dogma 2
-- Street Fighter 6
-- And more
+| Game | Convenience endpoints |
+|------|----------------------|
+| **Monster Hunter Wilds** | Player, equipment, monsters, map, weather, lobby, inventory, palico, materials, chat, hunt log |
+| **Resident Evil 2** | Player, enemies, inventory, game info (scenario/difficulty/adaptive rank), Mr. X tracker (AI state, distance, timers) |
+| **Resident Evil 9** | Player, equipment, enemies, map, inventory |
+| Devil May Cry 5, Dragon's Dogma 2, RE 3/4/7/8, MH Rise, SF6, ... | Core explorer endpoints (works on any RE Engine game) |
 
-The plugin has per-game convenience endpoints (player info, equipment, weather, etc.) gated behind preprocessor symbols (`#if MHWILDS`, `#if RE9`). The core explorer endpoints -- type search, object inspection, field read/write, method invocation -- work on any RE Engine game without modification.
+The plugin has per-game convenience endpoints gated behind preprocessor symbols (`#if MHWILDS`, `#elif RE9`, `#elif RE2`). The core explorer endpoints -- type search, object inspection, field read/write, method invocation -- work on any RE Engine game without modification.
 
 ## 50+ MCP tools
 
 | Category | Tools | What they do |
 |----------|-------|-------------|
-| **Game state** | `get_player`, `get_equipment`, `get_map`, `get_weather`, `get_lobby`, `get_camera` | Read player stats, gear, location, weather, multiplayer lobby |
+| **Game state** | `get_player`, `get_equipment`, `get_map`, `get_monsters`, `get_inventory`, `get_stalker`, `get_weather`, `get_lobby`, `get_camera` | Read player stats, gear, enemies, inventory, Mr. X tracker, weather, lobby |
 | **Type database** | `search_types`, `get_type`, `get_tdb` | Search and inspect the 100k+ type database |
 | **Object explorer** | `get_singleton`, `get_singletons`, `inspect_object`, `summary`, `read_field`, `call_method`, `get_array` | Navigate, inspect, and read any live object in memory |
 | **Mutation** | `invoke_method`, `write_field`, `set_health`, `set_position` | Write fields, call methods, modify game state |
@@ -169,6 +168,43 @@ Final output, formatted as a table:
 
 The user's question was 15 words. They didn't name a single type, field, method, singleton, or enum. The agent discovered the entire object graph, navigated it, handled a non-obvious enum mapping bug, and delivered a formatted answer with computed distances -- all from a cold start in under 7 minutes.
 
+### Real-world example: building a Mr. X tracker for Resident Evil 2
+
+A user asked: *"Add a Mr. X tracker to the dashboard."*
+
+The agent had never seen RE2's enemy system. It built the feature from scratch by probing the live game:
+
+1. **Find the entry point** -- `get_singleton("app.ropeway.EnemyManager")`, then discovered `get_Em6200ChaserController()` returns a `List<Em6200ChaserController>` (count=1 when Mr. X is spawned, 0 when he's not in the current scenario).
+2. **Map the controller** -- inspected the controller object: movement state (Stop/Move/Wait/DoorOpening/DoorPassing/GhostDoorOpening), ghost mode, location ID, safe room detection, always-chaser mode with disable timer.
+3. **Navigate to the AI brain** -- `get_Think()` on the controller yields `Em6200Think`, which holds the real AI state: `IsSleeping`, `IsEncounting`, `IsKillingMode`, `IsGhostMode`, `IsScreenTarget`, plus distance tracking (`PlayerDistanceSq`), kill/stun timers, and attack sight timers.
+4. **Handle the absent case** -- when Mr. X isn't spawned, the chaser controller list is empty. The endpoint returns `{ active: false, reason: "Mr. X not spawned" }` instead of crashing.
+5. **Write the endpoint** -- authored `GetStalkerRE2()` in the plugin, registered the route, deployed via hot-reload.
+6. **Build the dashboard card** -- color-coded status badge (red=Chasing, yellow=Searching, green=Stunned, purple=Teleporting), distance proximity bar that turns red as Mr. X gets closer, AI flag badges, and non-zero timer display.
+
+The result: a real-time Mr. X dashboard card that updates every second, showing exactly where he is, what he's doing, how far away he is, and whether he can see you. The entire feature -- API endpoint, dashboard card, CSS, MCP tool registration -- was built in a single conversation by an agent that had never touched RE2's codebase before.
+
+```json
+{
+  "active": true,
+  "status": "Chasing (Aggressive)",
+  "state": "Move",
+  "location": "RPD",
+  "playerDistance": 3.19,
+  "ai": {
+    "isSleeping": false,
+    "isEncounting": true,
+    "isKillingMode": true,
+    "isGhostMode": false,
+    "isScreenTarget": false,
+    "isTargetInSafeRoom": false
+  },
+  "timers": {
+    "killingTimer": 19.8,
+    "sleepTimer": 0
+  }
+}
+```
+
 ### Autonomous development
 
 The agent doesn't just read game state -- it can run a full development loop against the live game:
@@ -187,10 +223,21 @@ The agent guide (`help` tool) provides detailed navigation paths, chain examples
 
 ## Web dashboard
 
-Open `http://localhost:8899` in a browser while the game is running for:
+Open `http://localhost:8899` in a browser while the game is running. The dashboard auto-detects which game is running and shows the relevant cards:
 
-- **Player dashboard** -- Live stats, equipment, position, map info
+- **Player** -- HP bar with slider, position, status badges (poison, combat, etc.)
+- **Enemies** -- Active enemy list with HP bars, distance, kill tracking
+- **Inventory** -- Item pouch with weapon ammo/durability bars, equipped weapon, item counts
+- **Mr. X Tracker** (RE2) -- Real-time AI state (Chasing/Searching/Stunned/Teleporting), distance proximity bar, location, kill/stun timers, on-screen detection
+- **Game Info** -- Scenario, difficulty, adaptive difficulty rank with damage/break multipliers, save count
+- **Monsters** (MH Wilds) -- Large monster HP, species, position, distance
+- **Weather** (MH Wilds) -- Current/next weather, blend rates, in-game clock
+- **Equipment** -- Weapon stats, armor pieces, decorations
 - **Object explorer** -- Browse singletons, navigate object graphs, inspect fields and methods interactively
+
+Cards that don't apply to the current game are hidden automatically. The same plugin binary, same dashboard code -- it just adapts.
+
+The entire dashboard -- every card, every endpoint, every line of CSS -- was built by AI agents using the MCP tools in this repo. No human wrote the player HP bars, the enemy list, the inventory renderer, or the Mr. X tracker. An agent explored the live game's object graph to figure out what data was available, wrote the API endpoints to expose it, authored the HTML/JS/CSS to render it, tested against the running game, and iterated until it worked. The per-game detection, the adaptive card visibility, the RE2-specific features -- all autonomously built through the same tools the repo ships. The dashboard is both a useful feature and a proof of what the MCP server makes possible.
 
 ## Configuration
 

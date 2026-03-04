@@ -674,10 +674,35 @@ async function updateInventory() {
       return;
     }
 
+    // Detect RE2 inventory (has isWeapon field)
+    const isRE2 = d.items[0].isWeapon !== undefined;
+
     el.innerHTML = d.items.map(item => {
+      if (!isRE2) {
+        return `<div class='inv-item'>
+          <span class='inv-name'>${esc(item.name)}</span>
+          <span class='inv-qty'>x${item.quantity}</span>
+        </div>`;
+      }
+
+      const nameClass = item.isWeapon ? 'inv-weapon' : 'inv-name';
+
+      let qty = '';
+      if (item.isWeapon && item.maxQuantity > 1) {
+        // Weapon with ammo/durability bar
+        const pct = item.maxQuantity > 0 ? (item.quantity / item.maxQuantity * 100).toFixed(0) : 0;
+        const color = hpColor(item.remainRatio || 0);
+        qty = `<div class='inv-bar-wrap'>
+          <span class='inv-qty'>${item.quantity}/${item.maxQuantity}</span>
+          <div class='inv-bar-bg'><div class='inv-bar' style='width:${pct}%;background:${color}'></div></div>
+        </div>`;
+      } else if (item.quantity > 1 || item.maxQuantity > 1) {
+        qty = `<span class='inv-qty'>x${item.quantity}</span>`;
+      }
+
       return `<div class='inv-item'>
-        <span class='inv-name'>${item.name}</span>
-        <span class='inv-qty'>x${item.quantity}</span>
+        <span class='${nameClass}'>${esc(item.name)}</span>
+        ${qty}
       </div>`;
     }).join('');
   } catch(e) {
@@ -892,6 +917,62 @@ async function updateEnemies() {
   } catch(e) {
     setDot('enemies-card', false);
     document.getElementById('enemies-content').innerHTML = `<span class='error-msg'>${e.message}</span>`;
+  }
+}
+
+// ── Mr. X Tracker ───────────────────────────────────────────────────
+
+async function updateStalker() {
+  try {
+    const d = await fetchJson('/api/stalker');
+    const el = document.getElementById('stalker-content');
+    if (d.error) { setDot('stalker-card', false); el.innerHTML = `<span class='error-msg'>${d.error}</span>`; return; }
+    setDot('stalker-card', true);
+
+    if (!d.active) {
+      el.innerHTML = `<span class='error-msg'>${d.reason || 'Not active'}</span>`;
+      return;
+    }
+
+    const row = (l, v) => `<div class='stalker-row'><span class='label'>${l}</span><span class='value'>${v}</span></div>`;
+
+    // Status badge color
+    const statusColors = {
+      'Stunned': '#3fb950', 'Searching': '#d29922', 'Chasing': '#f85149',
+      'Chasing (Aggressive)': '#da3633', 'Teleporting': '#a371f7'
+    };
+    const statusColor = statusColors[d.status] || '#8b949e';
+    const statusBadge = `<span class='stalker-status' style='background:${statusColor}'>${d.status}</span>`;
+
+    // Distance indicator
+    const distColor = d.playerDistance < 5 ? '#da3633' : d.playerDistance < 15 ? '#d29922' : '#3fb950';
+    const distBar = d.playerDistance < 50 ? `<div class='stalker-dist-bar'><div class='stalker-dist-fill' style='width:${Math.min(100, (1 - d.playerDistance / 50) * 100).toFixed(0)}%;background:${distColor}'></div></div>` : '';
+
+    let html = `<div class='stalker-header'>${statusBadge}<span class='stalker-state'>${d.state || ''}</span></div>`;
+    html += row('Location', d.location || '?');
+    html += row('Distance', `<span style='color:${distColor};font-weight:600'>${d.playerDistance}m</span>`);
+    html += distBar;
+
+    // AI flags
+    const flags = [];
+    if (d.ai.isScreenTarget) flags.push('<span class="badge" style="background:#da3633">On Screen</span>');
+    if (d.ai.isDoorOpening) flags.push('<span class="badge" style="background:#d29922">Door</span>');
+    if (d.ai.isTargetInSafeRoom) flags.push('<span class="badge" style="background:#3fb950">Safe Room</span>');
+    if (d.ai.isGhostMode) flags.push('<span class="badge" style="background:#a371f7">Ghost</span>');
+    if (d.ai.alwaysChaserMode) flags.push('<span class="badge" style="background:#8b949e">Persistent</span>');
+    if (flags.length > 0) html += `<div class='stalker-flags'>${flags.join(' ')}</div>`;
+
+    // Timers (only show non-zero ones)
+    const timers = [];
+    if (d.timers.killingTimer > 0) timers.push(`Kill: ${d.timers.killingTimer}s`);
+    if (d.timers.sleepTimer > 0) timers.push(`Stun: ${d.timers.sleepTimer}s`);
+    if (d.timers.inAttackSightTimer > 0) timers.push(`Sight: ${d.timers.inAttackSightTimer}s`);
+    if (timers.length > 0) html += row('Timers', `<span class='stalker-timers'>${timers.join(' | ')}</span>`);
+
+    el.innerHTML = html;
+  } catch(e) {
+    setDot('stalker-card', false);
+    document.getElementById('stalker-content').innerHTML = `<span class='error-msg'>${e.message}</span>`;
   }
 }
 
@@ -1217,6 +1298,7 @@ async function initDashboard() {
     '/api/enemies': 'enemies-card',
     '/api/gameinfo': 'gameinfo-card',
     '/api/monsters': 'monsters-card',
+    '/api/stalker': 'stalker-card',
   };
   for (const [ep, cardId] of Object.entries(cardMap)) {
     if (!has(ep)) {
@@ -1241,6 +1323,7 @@ async function initDashboard() {
   if (has('/api/monsters'))  { updateMonsters();  setInterval(updateMonsters, 2000); }
   if (has('/api/palico'))    { updatePalico();    setInterval(updatePalico, 5000); }
   if (has('/api/enemies'))   { updateEnemies();   setInterval(updateEnemies, 1000); }
+  if (has('/api/stalker'))   { updateStalker();   setInterval(updateStalker, 1000); }
   if (has('/api/gameinfo'))  { updateGameInfo();  setInterval(updateGameInfo, 3000); }
 }
 

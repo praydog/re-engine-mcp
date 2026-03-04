@@ -185,6 +185,8 @@ class REFrameworkWebAPI {
                     "/api/player" => GetPlayerInfoRE2(),
                     "/api/enemies" => GetEnemiesRE2(),
                     "/api/gameinfo" => GetGameInfoRE2(),
+                    "/api/inventory" => GetInventoryRE2(),
+                    "/api/stalker" => GetStalkerRE2(),
 #endif
                     _ => null
                 };
@@ -267,7 +269,7 @@ class REFrameworkWebAPI {
 #elif RE9
         endpoints.AddRange(new[] { "/api/player", "/api/enemies", "/api/gameinfo" });
 #elif RE2
-        endpoints.AddRange(new[] { "/api/player", "/api/enemies", "/api/gameinfo" });
+        endpoints.AddRange(new[] { "/api/player", "/api/enemies", "/api/gameinfo", "/api/inventory", "/api/stalker" });
 #endif
         return new {
             name = "REFramework.NET Web API",
@@ -2733,6 +2735,216 @@ class REFrameworkWebAPI {
             } catch { }
 
             return result;
+        } catch (Exception e) {
+            return new { error = e.Message };
+        }
+    }
+
+    // ── RE2 Inventory ────────────────────────────────────────────────────
+
+    static object GetInventoryRE2() {
+        try {
+            var mgr = API.GetManagedSingleton("app.ropeway.gamemastering.InventoryManager") as IObject;
+            if (mgr == null) return new { error = "InventoryManager not available" };
+
+            int slotCount = 0, maxSlots = 0;
+            try { slotCount = Convert.ToInt32(mgr.Call("get_InventoryItemSlotCurrentSize").ToString()); } catch { }
+            try { maxSlots = Convert.ToInt32(mgr.Call("get_InventoryItemSlotMaxSize").ToString()); } catch { }
+
+            // Equipped weapon info
+            string equippedWeapon = null;
+            int? mainAmmoLoaded = null, mainAmmoCarried = null;
+            try { equippedWeapon = CallEnumMethod(mgr, "equipedWeapon"); } catch { }
+            var wpCode = equippedWeapon?.Split(' ')[0];
+            string matchedWeaponName = null;
+            try { mainAmmoLoaded = Convert.ToInt32(mgr.Call("getMainWeaponRemainingBullet").ToString()); } catch { }
+            try { mainAmmoCarried = Convert.ToInt32(mgr.Call("getMainWeaponReloadableBullet").ToString()); } catch { }
+
+            // Iterate slots
+            var items = new List<object>();
+            try {
+                var slots = mgr.Call("getInventorySlots") as IObject;
+                if (slots != null) {
+                    int arrLen = slotCount;
+                    // Get array length via System.Array
+                    try {
+                        var lenObj = slots.Call("get_Length");
+                        if (lenObj != null) arrLen = Convert.ToInt32(lenObj.ToString());
+                    } catch { }
+
+                    for (int i = 0; i < arrLen && i < slotCount; i++) {
+                        try {
+                            var slot = slots.Call("Get", (object)i) as IObject;
+                            if (slot == null) continue;
+
+                            bool isEmpty = false;
+                            try { isEmpty = (bool)slot.Call("get_IsEmpty"); } catch { }
+                            if (isEmpty) continue;
+
+                            bool isBlank = false;
+                            try { isBlank = (bool)slot.Call("get_IsBlank"); } catch { }
+                            if (isBlank) continue;
+
+                            string itemName = null, weaponName = null;
+                            int number = 0, maxNumber = 0;
+                            bool isWeapon = false, isItem = false, isCustomized = false;
+                            float remainRatio = 1f;
+                            string weaponParts = null;
+
+                            try { itemName = slot.Call("get_ItemName")?.ToString(); } catch { }
+                            try { weaponName = slot.Call("get_WeaponName")?.ToString(); } catch { }
+                            try { number = Convert.ToInt32(slot.Call("get_Number").ToString()); } catch { }
+                            try { maxNumber = Convert.ToInt32(slot.Call("get_MaxNumber").ToString()); } catch { }
+                            try { isWeapon = (bool)slot.Call("get_IsWeapon"); } catch { }
+                            try { isItem = (bool)slot.Call("get_IsItem"); } catch { }
+                            try { isCustomized = (bool)slot.Call("get_IsCustomizedWeapon"); } catch { }
+                            try { remainRatio = Convert.ToSingle(slot.Call("get_RemainingRatio").ToString()); } catch { }
+                            try { weaponParts = CallEnumMethod(slot, "get_WeaponParts"); } catch { }
+
+                            // Match equipped weapon by WP code
+                            if (isWeapon && wpCode != null && matchedWeaponName == null) {
+                                try {
+                                    var slotWpEnum = CallEnumMethod(slot, "get_WeaponType");
+                                    var slotWpCode = slotWpEnum?.Split(' ')[0];
+                                    if (slotWpCode == wpCode) matchedWeaponName = weaponName;
+                                } catch { }
+                            }
+
+                            string name = isWeapon ? (weaponName ?? itemName ?? "?") : (itemName ?? "?");
+
+                            items.Add(new {
+                                slotIndex = i,
+                                name,
+                                quantity = number,
+                                maxQuantity = maxNumber,
+                                isWeapon,
+                                isItem,
+                                isCustomized,
+                                remainRatio,
+                                weaponParts = isWeapon ? weaponParts : null
+                            });
+                        } catch { }
+                    }
+                }
+            } catch { }
+
+            return new {
+                count = items.Count,
+                capacity = maxSlots,
+                equippedWeapon = matchedWeaponName ?? equippedWeapon,
+                equippedWeaponType = wpCode,
+                mainAmmoLoaded,
+                mainAmmoCarried,
+                items
+            };
+        } catch (Exception e) {
+            return new { error = e.Message };
+        }
+    }
+
+    // ── RE2 Mr. X (Tyrant) Tracker ─────────────────────────────────────
+
+    static object GetStalkerRE2() {
+        try {
+            var em = API.GetManagedSingleton("app.ropeway.EnemyManager") as IObject;
+            if (em == null) return new { error = "EnemyManager not available" };
+
+            // Get the chaser controller list
+            var chaserList = em.Call("get_Em6200ChaserController") as IObject;
+            if (chaserList == null) return new { active = false, reason = "No chaser controller" };
+
+            int chaserCount = 0;
+            try { chaserCount = (int)chaserList.Call("get_Count"); } catch { }
+            if (chaserCount == 0) return new { active = false, reason = "Mr. X not spawned" };
+
+            var ctrl = chaserList.Call("get_Item", (object)0) as IObject;
+            if (ctrl == null) return new { active = false, reason = "Controller null" };
+
+            // Controller-level state
+            string state = null;
+            bool isGhostMode = false, isActiveArea = false, alwaysChaserMode = false;
+            bool isTargetInSafeRoom = false;
+            string stayMapID = null, stayLocationID = null;
+            float alwaysChaserDisableTimer = 0;
+
+            try {
+                var stateVal = Convert.ToInt32(ctrl.GetField("State").ToString());
+                var stateNames = new[] { "Stop", "Move", "Wait", "DoorOpening", "DoorPassing", "GhostDoorOpening" };
+                state = stateVal >= 0 && stateVal < stateNames.Length ? stateNames[stateVal] : stateVal.ToString();
+            } catch { }
+            try { isGhostMode = (bool)ctrl.Call("get_IsGhostMode"); } catch { }
+            try { isActiveArea = (bool)ctrl.GetField("IsActiveArea"); } catch { }
+            try { alwaysChaserMode = (bool)ctrl.GetField("AlwaysChaserMode"); } catch { }
+            try { isTargetInSafeRoom = (bool)ctrl.Call("get_IsTargetInSafeRoom"); } catch { }
+            try { stayMapID = CallEnumMethod(ctrl, "get_StayMapID"); } catch { }
+            try { stayLocationID = CallEnumMethod(ctrl, "get_StayLocationID"); } catch { }
+            try { alwaysChaserDisableTimer = Convert.ToSingle(ctrl.GetField("AlwaysChaserDisableTimer").ToString()); } catch { }
+
+            // Resolve location name
+            string locationName = null;
+            if (stayLocationID != null) {
+                var locCode = stayLocationID.Split(' ')[0];
+                s_re2LocationNames.TryGetValue(locCode, out locationName);
+                locationName = locationName ?? locCode;
+            }
+
+            // Think (AI brain) state
+            bool isSleeping = false, isEncounting = false, isKillingMode = false;
+            bool isThinkGhostMode = false, isScreenTarget = false, isDoorOpening = false;
+            float playerDistanceSq = 0, killingTimer = 0, sleepTimer = 0;
+            float inAttackSightTimer = 0;
+
+            try {
+                var think = ctrl.Call("get_Think") as IObject;
+                if (think != null) {
+                    try { isSleeping = (bool)think.Call("get_IsSleeping"); } catch { }
+                    try { isEncounting = (bool)think.Call("get_IsEncounting"); } catch { }
+                    try { isKillingMode = (bool)think.Call("get_IsKillingMode"); } catch { }
+                    try { isThinkGhostMode = (bool)think.Call("get_IsGhostMode"); } catch { }
+                    try { isScreenTarget = (bool)think.Call("get_IsScreenTarget"); } catch { }
+                    try { isDoorOpening = (bool)think.Call("get_IsDoorOpening"); } catch { }
+                    try { playerDistanceSq = Convert.ToSingle(think.GetField("PlayerDistanceSq").ToString()); } catch { }
+                    try { killingTimer = Convert.ToSingle(think.Call("get_KillingTimer").ToString()); } catch { }
+                    try { sleepTimer = Convert.ToSingle(think.Call("get_SleepTimer").ToString()); } catch { }
+                    try { inAttackSightTimer = Convert.ToSingle(think.Call("get_InAttackSightTimer").ToString()); } catch { }
+                }
+            } catch { }
+
+            float playerDistance = (float)Math.Round(Math.Sqrt(playerDistanceSq), 2);
+
+            // Derive a human-readable status
+            string status = isSleeping ? "Stunned"
+                : isThinkGhostMode ? "Teleporting"
+                : !isEncounting ? "Searching"
+                : isKillingMode ? "Chasing (Aggressive)"
+                : "Chasing";
+
+            return new {
+                active = true,
+                status,
+                state,
+                location = locationName ?? stayLocationID,
+                locationId = stayLocationID,
+                mapId = stayMapID,
+                playerDistance,
+                playerDistanceSq = Math.Round(playerDistanceSq, 2),
+                ai = new {
+                    isSleeping,
+                    isEncounting,
+                    isKillingMode,
+                    isGhostMode = isThinkGhostMode || isGhostMode,
+                    isScreenTarget,
+                    isDoorOpening,
+                    isTargetInSafeRoom,
+                    alwaysChaserMode
+                },
+                timers = new {
+                    killingTimer = Math.Round(killingTimer, 1),
+                    sleepTimer = Math.Round(sleepTimer, 1),
+                    inAttackSightTimer = Math.Round(inAttackSightTimer, 1),
+                    alwaysChaserDisableTimer = Math.Round(alwaysChaserDisableTimer, 1)
+                }
+            };
         } catch (Exception e) {
             return new { error = e.Message };
         }

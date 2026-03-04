@@ -112,6 +112,13 @@ public static class ConvenienceTools
     [Description("Get large monsters on the current map: name, species, HP, max HP, position, distance from player")]
     public static async Task<string> GetMonsters() => await Http.Get("/api/enemies");
 
+    [McpServerTool(Name = "reframework_get_inventory")]
+    [Description("Get player inventory: equipped weapon, items with quantities, weapons with ammo/durability")]
+    public static async Task<string> GetInventory() => await Http.Get("/api/inventory");
+
+    [McpServerTool(Name = "reframework_get_stalker")]
+    [Description("Get Mr. X (Tyrant) tracker: status, AI state, distance to player, location, timers (RE2 only)")]
+    public static async Task<string> GetStalker() => await Http.Get("/api/stalker");
     [McpServerTool(Name = "reframework_get_weather")]
     [Description("Get current weather, next weather, blend rates, in-game clock time")]
     public static async Task<string> GetWeather() => await Http.Get("/api/weather");
