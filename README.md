@@ -131,47 +131,41 @@ But the real power is in open-ended requests. You don't need to know the game's 
 - *"Reverse-engineer how the damage formula works, then write a C# plugin that adds a damage log overlay."*
 - *"I want to change the weather to always be sunny. Find the right singleton, figure out the fields, and make it happen."*
 
-### Real-world example: querying every large monster on the map
+### Real-world example: querying every large monster on the map (Monster Hunter Wilds, ~7 min)
 
 A user asked: *"What large monsters are currently loaded? Give me each one's species, HP, max HP, position, and distance from my character."*
 
-The agent had zero prior context about the game's enemy system. It solved this autonomously in ~7 minutes across roughly 25 tool calls:
+The agent had zero prior context about the game's enemy system. It found the enemy manager singleton, navigated a multi-step object graph through `chain` queries, and filtered down to boss-type enemies. It resolved monster names via GUID localization, read HP and positions, and computed 3D distances. Along the way it discovered and corrected a non-obvious enum offset bug between `SPECIES_Fixed` and `SPECIES` variants. 15-word question in, formatted table out.
+
+| Monster | Species | HP | Max HP | Distance |
+|---------|---------|---:|-------:|---------:|
+| Doshaguma | Fanged Beast | 14,400 | 14,400 | 512m |
+| Lala Barina | Temnoceran | 10,483 | 10,483 | 348m |
+| Rathian | Flying Wyvern | 11,772 | 11,794 | 207m |
+| Rathalos | Flying Wyvern | 13,500 | 13,500 | 309m |
+| Uth Duna | Leviathan | 20,196 | 20,196 | 607m |
+
+<details>
+<summary>Full step-by-step breakdown</summary>
 
 1. **Get the player's position** via `get_player` -- needed later for distance calculation.
 2. **Find the enemy manager** -- `get_singleton("app.EnemyManager")` to get the root of the enemy object graph.
 3. **Navigate the enemy list** -- a multi-step `chain` query: `EnemyManager` -> `_EnemyList` (a `cManagedArray`) -> `get_Array()` -> expand the array -> filter by `get_CharacterValid=True` -> `get_Context()` -> `get_Em()` -> `Basic` -> filter by `get_IsBoss=True`. This yielded 5 boss-type enemies out of the full enemy pool.
-4. **Resolve monster names** -- called `EnemyDef.EnemyName(ID)` for each boss to get a GUID, then batch-resolved those GUIDs via `localize_guid` to get localized names: Doshaguma, Lala Barina, Rathian, Rathalos, Uth Duna.
-5. **Read HP** -- navigated each enemy's `Context` -> `Chara` -> `HealthManager` and called `get_Health()` / `get_MaxHealth()` to get current and max HP values.
+4. **Resolve monster names** -- called `EnemyDef.EnemyName(ID)` for each boss to get a GUID, then batch-resolved those GUIDs via `localize_guid` to get localized names.
+5. **Read HP** -- navigated each enemy's `Context` -> `Chara` -> `HealthManager` and called `get_Health()` / `get_MaxHealth()`.
 6. **Read positions** -- called `get_Pos()` on each enemy's `ManageInfo` object to get world coordinates.
-7. **Resolve species names** -- this was the non-obvious part. `EnemyDef.Species(ID)` returns a `SPECIES_Fixed` enum, but `EnemyDef.EmSpeciesName()` expects a non-Fixed `SPECIES` enum. These look identical (same member names like `SPECIES_006`) but have different underlying integer values -- the `_Fixed` variant starts at 0 for `INVARID`, while the non-Fixed variant starts at -1, shifting every subsequent value by 1. The agent discovered this by comparing `_Fixed` and non-Fixed backing fields on a data object (e.g., `IconDef.ENEMY_Fixed.E0002 = 3` vs `IconDef.ENEMY.E0002 = 2`), inferred the offset pattern, corrected the enum values, and got the right species names: Fanged Beast, Temnoceran, Flying Wyvern, Leviathan.
+7. **Resolve species names** -- `EnemyDef.Species(ID)` returns a `SPECIES_Fixed` enum, but `EnemyDef.EmSpeciesName()` expects a non-Fixed `SPECIES` enum. These look identical (same member names) but have different underlying integer values -- the `_Fixed` variant starts at 0, while the non-Fixed variant starts at -1, shifting every value by 1. The agent discovered this by comparing backing fields on a data object, inferred the offset pattern, corrected the enum values, and got the right species names.
 8. **Compute distances** -- Euclidean 3D distance from each monster's position to the player.
 
-Final output, formatted as a table:
+</details>
 
-| Monster | Species | HP | Max HP | Position | Distance |
-|---------|---------|---:|-------:|---------:|---------:|
-| Doshaguma | Fanged Beast | 14,400 | 14,400 | (-45.5, 82.7, -462.4) | 512 |
-| Lala Barina | Temnoceran | 10,483 | 10,483 | (144.5, 35.2, 329.6) | 348 |
-| Rathian | Flying Wyvern | 11,772 | 11,794 | (110.9, 37.4, 160.4) | 207 |
-| Rathalos | Flying Wyvern | 13,500 | 13,500 | (231.2, 147.6, 74.5) | 309 |
-| Uth Duna | Leviathan | 20,196 | 20,196 | (56.1, 201.1, -542.5) | 607 |
-
-The user's question was 15 words. They didn't name a single type, field, method, singleton, or enum. The agent discovered the entire object graph, navigated it, handled a non-obvious enum mapping bug, and delivered a formatted answer with computed distances -- all from a cold start in under 7 minutes.
-
-### Real-world example: building a Mr. X tracker for Resident Evil 2
+### Real-world example: building a Mr. X tracker for Resident Evil 2 (~5 min)
 
 A user asked: *"Add a Mr. X tracker to the dashboard."*
 
-The agent had never seen RE2's enemy system. It built the feature from scratch by probing the live game:
+The agent had never seen RE2's enemy system. It explored `EnemyManager`, discovered the `Em6200ChaserController` list (count=1 when Mr. X is spawned), and navigated to the `Em6200Think` AI brain with its state flags and timers.
 
-1. **Find the entry point** -- `get_singleton("app.ropeway.EnemyManager")`, then discovered `get_Em6200ChaserController()` returns a `List<Em6200ChaserController>` (count=1 when Mr. X is spawned, 0 when he's not in the current scenario).
-2. **Map the controller** -- inspected the controller object: movement state (Stop/Move/Wait/DoorOpening/DoorPassing/GhostDoorOpening), ghost mode, location ID, safe room detection, always-chaser mode with disable timer.
-3. **Navigate to the AI brain** -- `get_Think()` on the controller yields `Em6200Think`, which holds the real AI state: `IsSleeping`, `IsEncounting`, `IsKillingMode`, `IsGhostMode`, `IsScreenTarget`, plus distance tracking (`PlayerDistanceSq`), kill/stun timers, and attack sight timers.
-4. **Handle the absent case** -- when Mr. X isn't spawned, the chaser controller list is empty. The endpoint returns `{ active: false, reason: "Mr. X not spawned" }` instead of crashing.
-5. **Write the endpoint** -- authored `GetStalkerRE2()` in the plugin, registered the route, deployed via hot-reload.
-6. **Build the dashboard card** -- color-coded status badge (red=Chasing, yellow=Searching, green=Stunned, purple=Teleporting), distance proximity bar that turns red as Mr. X gets closer, AI flag badges, and non-zero timer display.
-
-The result: a real-time Mr. X dashboard card that updates every second, showing exactly where he is, what he's doing, how far away he is, and whether he can see you. The entire feature -- API endpoint, dashboard card, CSS, MCP tool registration -- was built in a single conversation by an agent that had never touched RE2's codebase before.
+From there it wrote the full feature: API endpoint with graceful absent-case handling, dashboard card with color-coded status badges and a distance proximity bar, CSS, and MCP tool registration. All deployed via hot-reload and tested against the running game.
 
 ```json
 {
@@ -180,32 +174,36 @@ The result: a real-time Mr. X dashboard card that updates every second, showing 
   "state": "Move",
   "location": "RPD",
   "playerDistance": 3.19,
-  "ai": {
-    "isSleeping": false,
-    "isEncounting": true,
-    "isKillingMode": true,
-    "isGhostMode": false,
-    "isScreenTarget": false,
-    "isTargetInSafeRoom": false
-  },
-  "timers": {
-    "killingTimer": 19.8,
-    "sleepTimer": 0
-  }
+  "ai": { "isSleeping": false, "isEncounting": true, "isKillingMode": true, "isGhostMode": false },
+  "timers": { "killingTimer": 19.8, "sleepTimer": 0 }
 }
 ```
+
+<details>
+<summary>Full step-by-step breakdown</summary>
+
+1. **Find the entry point** -- `get_singleton("app.ropeway.EnemyManager")`, then discovered `get_Em6200ChaserController()` returns a `List<Em6200ChaserController>` (count=1 when Mr. X is spawned, 0 when he's not in the current scenario).
+2. **Map the controller** -- inspected the controller object: movement state (Stop/Move/Wait/DoorOpening/DoorPassing/GhostDoorOpening), ghost mode, location ID, safe room detection, always-chaser mode with disable timer.
+3. **Navigate to the AI brain** -- `get_Think()` on the controller yields `Em6200Think`, which holds the real AI state: `IsSleeping`, `IsEncounting`, `IsKillingMode`, `IsGhostMode`, `IsScreenTarget`, plus distance tracking (`PlayerDistanceSq`), kill/stun timers, and attack sight timers.
+4. **Handle the absent case** -- when Mr. X isn't spawned, the chaser controller list is empty. The endpoint returns `{ active: false, reason: "Mr. X not spawned" }` instead of crashing.
+5. **Write the endpoint** -- authored `GetStalkerRE2()` in the plugin, registered the route, deployed via hot-reload.
+6. **Build the dashboard card** -- color-coded status badge (red=Chasing, yellow=Searching, green=Stunned, purple=Teleporting), distance proximity bar that turns red as Mr. X gets closer, AI flag badges, and non-zero timer display.
+
+</details>
 
 ### Autonomous development
 
 The agent doesn't just read game state -- it can run a full development loop against the live game:
 
-1. **Discover.** Search the type database for relevant singletons, inspect their fields and methods, probe live objects to understand data layouts and collection contents. The agent fans out parallel queries across multiple singletons to find populated collections of the right shape -- scanning `SaveServiceManager`, `ItemManager`, `CharacterManager` etc. to locate `Dictionary`, `HashSet`, `List`, and `Array` fields with real data to test against.
+1. **Discover.** Search the type database for relevant singletons. Inspect their fields and methods, probe live objects to understand data layouts. The agent fans out parallel queries to find populated collections of the right shape.
 2. **Write.** Author a C# plugin (or modify an existing one) and save it to the game's `reframework/plugins/source/` directory.
 3. **Build.** The plugin hot-compiles automatically. The agent reads compile status and errors through the MCP server -- no manual checking needed.
 4. **Test.** Deploy test plugins that exercise specific behaviors, read the results from the game log, and verify correctness. If something fails, the agent reads the error, fixes the code, and recompiles -- all without human intervention.
 5. **Iterate.** Repeat until the tests pass. The agent can locate candidate objects, write targeted tests, fix field names or type mismatches from error output, and converge on working code autonomously.
 
-For example: given a C++ API with broken collection iteration, the agent probed live `Dictionary`, `HashSet`, `List`, and `Array` objects across multiple game singletons to characterize the failures, read the C++ source to identify the root cause, wrote a fix, built it, then needed test data. It queried the type database and inspected live singletons to find fields of each collection type that were actually populated -- a `Dictionary<String, GameSlotSaveHandler>` with 37 entries here, a `HashSet<ItemID>` with 113 entries there, a `Dictionary<SaveSlotAddress, SaveSlotInfo>` with struct keys for diversity. It assembled these into a 22-test regression suite covering both ManagedObject and proxy iteration paths, deployed it as a hot-compiled plugin, read back the log, fixed wrong field names from the error output, redeployed, and converged to 22 PASS, 0 FAIL. No human touched the keyboard between "fix the broken enumerator" and the final results.
+For example: given a C++ API with broken collection iteration, the agent probed live `Dictionary`, `HashSet`, `List`, and `Array` objects across multiple game singletons to characterize the failures. It read the C++ source to identify the root cause, wrote a fix, and built it.
+
+Then it needed test data. It queried the type database and inspected live singletons to find populated collections of each type -- a `Dictionary<String, GameSlotSaveHandler>` with 37 entries, a `HashSet<ItemID>` with 113 entries, a `Dictionary<SaveSlotAddress, SaveSlotInfo>` with struct keys for diversity. It assembled a 22-test regression suite, deployed it as a hot-compiled plugin, read back the log, fixed wrong field names from the error output, redeployed, and converged to 22 PASS, 0 FAIL. No human touched the keyboard between "fix the broken enumerator" and the final results.
 
 > **Tip:** Pair with [IDA Pro MCP](https://github.com/mrexodia/ida-pro-mcp) for even deeper reverse engineering. If the IDA database has RE Engine method addresses mapped to names (REFramework ships a Python script for this), the agent can read decompiled function bodies alongside live object inspection. Not required, but powerful when you need to understand what a function actually does rather than just what it's called.
 
@@ -227,7 +225,11 @@ Open `http://localhost:8899` in a browser while the game is running. The dashboa
 
 Cards that don't apply to the current game are hidden automatically. The same plugin binary, same dashboard code -- it just adapts.
 
-The entire dashboard -- every card, every endpoint, every line of CSS -- was built by AI agents using the MCP tools in this repo. No human wrote the player HP bars, the enemy list, the inventory renderer, or the Mr. X tracker. An agent explored the live game's object graph to figure out what data was available, wrote the API endpoints to expose it, authored the HTML/JS/CSS to render it, tested against the running game, and iterated until it worked. The per-game detection, the adaptive card visibility, the RE2-specific features -- all autonomously built through the same tools the repo ships. The dashboard is both a useful feature and a proof of what the MCP server makes possible.
+The entire dashboard -- every card, every endpoint, every line of CSS -- was built by AI agents using the MCP tools in this repo. No human wrote the player HP bars, the enemy list, the inventory renderer, or the Mr. X tracker.
+
+The process: an agent explored the live game's object graph to discover what data was available. It wrote API endpoints to expose that data, authored the HTML/JS/CSS to render it, tested against the running game, and iterated until it worked. The full RE2 dashboard -- player, enemies, inventory, game info, Mr. X tracker -- took about 30 minutes.
+
+The per-game detection, the adaptive card visibility, the RE2-specific features -- all autonomously built through the same tools the repo ships. The dashboard is both a useful feature and a proof of what the MCP server makes possible.
 
 ## Configuration
 
