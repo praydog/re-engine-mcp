@@ -110,6 +110,9 @@ class REFrameworkWebAPI {
                         "/api/chat" => SendChat(ctx.Request),
 #elif RE9
                         "/api/player/health" => SetPlayerHealthRE9(ctx.Request),
+#elif RE2
+                        "/api/player/health" => SetPlayerHealthRE2(ctx.Request),
+                        "/api/player/position" => SetPlayerPositionRE2(ctx.Request),
 #endif
                         "/api/explorer/field" => PostExplorerField(ctx.Request),
                         "/api/explorer/method" => PostExplorerMethod(ctx.Request),
@@ -167,7 +170,9 @@ class REFrameworkWebAPI {
                     "/api/meshes" => GetMeshList(),
                     "/api/materials" => GetMaterials(),
                     "/api/map" => GetMapInfo(),
+                    "/api/gameinfo" => GetMapInfo(),
                     "/api/monsters" => GetMonsters(),
+                    "/api/enemies" => GetMonsters(),
                     "/api/chat" => GetChatHistory(),
                     "/api/huntlog" => GetHuntLog(),
                     "/api/palico" => GetPalicoStats(),
@@ -176,6 +181,10 @@ class REFrameworkWebAPI {
                     "/api/player" => GetPlayerInfoRE9(),
                     "/api/enemies" => GetEnemiesRE9(),
                     "/api/gameinfo" => GetGameInfoRE9(),
+#elif RE2
+                    "/api/player" => GetPlayerInfoRE2(),
+                    "/api/enemies" => GetEnemiesRE2(),
+                    "/api/gameinfo" => GetGameInfoRE2(),
 #endif
                     _ => null
                 };
@@ -256,6 +265,8 @@ class REFrameworkWebAPI {
             "/api/inventory", "/api/meshes", "/api/materials", "/api/map", "/api/monsters",
             "/api/chat", "/api/huntlog", "/api/palico" });
 #elif RE9
+        endpoints.AddRange(new[] { "/api/player", "/api/enemies", "/api/gameinfo" });
+#elif RE2
         endpoints.AddRange(new[] { "/api/player", "/api/enemies", "/api/gameinfo" });
 #endif
         return new {
@@ -2289,6 +2300,435 @@ class REFrameworkWebAPI {
                 var mgfm = API.GetManagedSingletonT<app.MainGameFlowManager>();
                 if (mgfm != null) {
                     result["isMainGame"] = mgfm.IsMainGame();
+                }
+            } catch { }
+
+            return result;
+        } catch (Exception e) {
+            return new { error = e.Message };
+        }
+    }
+#endif
+
+#if RE2
+    // ── RE2 Player Info ──────────────────────────────────────────────────
+
+    static readonly Dictionary<string, string> s_re2PlayerNames = new() {
+        { "PL1000", "Leon" },
+        { "PL2000", "Claire" },
+        { "PL4000", "Hunk" },
+        { "PL5000", "Tofu" },
+        { "PL5100", "Konjac" },
+        { "PL5200", "Uiro-Mochi" },
+        { "PL5300", "Flan" },
+        { "PL5400", "Annin Tofu" },
+    };
+
+    static readonly Dictionary<string, string> s_re2EnemyNames = new() {
+        { "em0000", "Zombie" },
+        { "em0100", "Zombie (Armored)" },
+        { "em3000", "Licker" },
+        { "em3100", "Licker \u03B2" },
+        { "em4000", "G-Adult" },
+        { "em4400", "Ivy" },
+        { "em4500", "Ivy (Zombie)" },
+        { "em5000", "Cerberus" },
+        { "em6000", "G-Birkin (Phase 1)" },
+        { "em6100", "G-Birkin (Phase 2)" },
+        { "em6200", "Mr. X" },
+        { "em6300", "Super Tyrant" },
+        { "em6400", "G-Birkin (Phase 3)" },
+        { "em6500", "G-Birkin (Phase 4)" },
+        { "em6600", "G-Birkin (Phase 5)" },
+        { "em7000", "Chief Irons" },
+        { "em7100", "Alligator" },
+        { "em9000", "G-Young" },
+    };
+
+    static readonly Dictionary<string, string> s_re2LocationNames = new() {
+        { "PoliceStation", "R.P.D." },
+        { "Sewers", "Sewers" },
+        { "Laboratory", "NEST" },
+        { "Orphanage", "Orphanage" },
+        { "WasteWater", "Waste Water" },
+    };
+
+    // Helper: call a getter that returns an enum, resolve via BoxEnum
+    static string CallEnumMethod(IObject obj, string methodName) {
+        var tdef = obj.GetTypeDefinition();
+        var method = FindMethod(tdef, methodName, null);
+        if (method == null) return null;
+        var result = obj.Call(methodName);
+        if (result == null) return null;
+        var returnType = method.GetReturnType();
+        if (returnType != null && returnType.IsEnum()) {
+            long longValue = Convert.ToInt64(result);
+            try {
+                var boxed = BoxEnum(returnType, longValue);
+                return (boxed as IObject)?.Call("ToString()") + " (" + result + ")";
+            } catch { }
+        }
+        return result.ToString();
+    }
+
+    static object GetPlayerInfoRE2() {
+        try {
+            var pm = API.GetManagedSingleton("app.ropeway.PlayerManager");
+            if (pm == null) return new { error = "PlayerManager not available" };
+            var pmObj = pm as IObject;
+
+            // Player type and character name
+            string playerTypeStr = null;
+            string playerName = null;
+            try {
+                playerTypeStr = CallEnumMethod(pmObj, "get_CurrentPlayerType");
+            } catch { }
+            // Character identity from MainFlowManager (CurrentPlayerType is unreliable)
+            try {
+                var mfm = API.GetManagedSingleton("app.ropeway.gamemastering.MainFlowManager") as IObject;
+                if (mfm != null) {
+                    bool isLeon = false, isClaire = false;
+                    try { isLeon = (bool)mfm.Call("get_IsLeon"); } catch { }
+                    try { isClaire = (bool)mfm.Call("get_IsClaire"); } catch { }
+                    if (isLeon) playerName = "Leon";
+                    else if (isClaire) playerName = "Claire";
+                }
+            } catch { }
+            // Fallback: try to match from playerType enum for Hunk/Tofu modes
+            if (playerName == null && playerTypeStr != null) {
+                var code = playerTypeStr.Split(' ')[0];
+                s_re2PlayerNames.TryGetValue(code, out playerName);
+                if (playerName == null) playerName = code;
+            }
+
+            // HP
+            int? health = null, maxHealth = null;
+            float? healthPercent = null;
+            bool isDead = false;
+            try { health = Convert.ToInt32(pmObj.Call("get_CurrentHP").ToString()); } catch { }
+            try { healthPercent = Convert.ToSingle(pmObj.Call("get_CurrentHPPercentage").ToString()); } catch { }
+            try { isDead = (bool)pmObj.Call("get_IsDead"); } catch { }
+            // Max HP from HitPointController on the PlayerCondition
+            try {
+                var pc0 = pmObj.Call("get_CurrentPlayerCondition") as IObject;
+                if (pc0 != null) {
+                    var hpc = pc0.Call("get_HitPointController") as IObject;
+                    if (hpc != null) {
+                        maxHealth = Convert.ToInt32(hpc.Call("get_DefaultHitPoint").ToString());
+                    }
+                }
+            } catch { }
+
+            // Position
+            float? posX = null, posY = null, posZ = null;
+            try {
+                var posObj = pmObj.Call("get_CurrentPosition") as IObject;
+                if (posObj != null) {
+                    posX = Convert.ToSingle(posObj.GetField("x").ToString());
+                    posY = Convert.ToSingle(posObj.GetField("y").ToString());
+                    posZ = Convert.ToSingle(posObj.GetField("z").ToString());
+                }
+            } catch { }
+
+            // Player condition details
+            bool isPoison = false, isCombat = false, isEvent = false;
+            bool isHolding = false, isAttacked = false;
+            string vital = null, weaponType = null, subWeaponType = null;
+            string situation = null, costumeType = null;
+            try {
+                var pc = pmObj.Call("get_CurrentPlayerCondition") as IObject;
+                if (pc != null) {
+                    try { isPoison = (bool)pc.Call("get_IsPoison"); } catch { }
+                    try { isCombat = (bool)pc.Call("get_IsCombat"); } catch { }
+                    try { isEvent = (bool)pc.Call("get_IsEvent"); } catch { }
+                    try { isHolding = (bool)pc.Call("get_IsHolding"); } catch { }
+                    try { isAttacked = (bool)pc.Call("get_IsAttacked"); } catch { }
+                    try { vital = CallEnumMethod(pc, "get_HitPointVital"); } catch { }
+                    try { weaponType = CallEnumMethod(pc, "get_EquipWeaponType"); } catch { }
+                    try { subWeaponType = CallEnumMethod(pc, "get_SubWeaponType"); } catch { }
+                    try { situation = CallEnumMethod(pc, "get_Situation"); } catch { }
+                    try { costumeType = CallEnumMethod(pc, "get_CostumeType"); } catch { }
+                }
+            } catch { }
+
+            // Stats
+            int? pedometer = null, damagedCount = null, counterAttackCount = null;
+            float? totalDistance = null;
+            try { pedometer = Convert.ToInt32(pmObj.Call("get_Pedometer").ToString()); } catch { }
+            try { damagedCount = Convert.ToInt32(pmObj.Call("get_DamagedNumber").ToString()); } catch { }
+            try { counterAttackCount = Convert.ToInt32(pmObj.Call("get_CounterAttackNumber").ToString()); } catch { }
+            try { totalDistance = Convert.ToSingle(pmObj.Call("get_TotalMovingDistance").ToString()); } catch { }
+
+            return new {
+                playerType = playerTypeStr,
+                playerName,
+                health,
+                maxHealth,
+                healthPercent,
+                isDead,
+                position = new { x = posX, y = posY, z = posZ },
+                status = new {
+                    vital,
+                    isPoison,
+                    isCombat,
+                    isEvent,
+                    isHolding,
+                    isAttacked,
+                    situation
+                },
+                equipment = new {
+                    weapon = weaponType,
+                    subWeapon = subWeaponType,
+                    costume = costumeType
+                },
+                stats = new {
+                    pedometer,
+                    damagedCount,
+                    counterAttackCount,
+                    totalDistance
+                }
+            };
+        } catch (Exception e) {
+            return new { error = e.Message };
+        }
+    }
+
+    static object SetPlayerHealthRE2(HttpListenerRequest request) {
+        try {
+            using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+            var body = reader.ReadToEnd();
+            var doc = JsonDocument.Parse(body);
+            var value = doc.RootElement.GetProperty("value").GetInt32();
+
+            var pm = API.GetManagedSingleton("app.ropeway.PlayerManager");
+            if (pm == null) return new { error = "PlayerManager not available" };
+            var pmObj = pm as IObject;
+
+            var pc = pmObj.Call("get_CurrentPlayerCondition") as IObject;
+            if (pc == null) return new { error = "Player not available" };
+
+            pc.Call("set_CurrentHitPoint", (object)value);
+            return new { ok = true, health = value };
+        } catch (Exception e) {
+            return new { error = e.Message };
+        }
+    }
+
+    static object SetPlayerPositionRE2(HttpListenerRequest request) {
+        try {
+            using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+            var body = reader.ReadToEnd();
+            var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            var pm = API.GetManagedSingleton("app.ropeway.PlayerManager");
+            if (pm == null) return new { error = "PlayerManager not available" };
+            var pmObj = pm as IObject;
+
+            var go = pmObj.Call("get_CurrentPlayer") as IObject;
+            if (go == null) return new { error = "Player GameObject not found" };
+
+            var tf = go.Call("get_Transform") as IObject;
+            if (tf == null) return new { error = "Transform not found" };
+
+            // Read current position from PlayerManager (reliable)
+            var posObj = pmObj.Call("get_CurrentPosition") as IObject;
+            float x = posObj != null ? Convert.ToSingle(posObj.GetField("x").ToString()) : 0;
+            float y = posObj != null ? Convert.ToSingle(posObj.GetField("y").ToString()) : 0;
+            float z = posObj != null ? Convert.ToSingle(posObj.GetField("z").ToString()) : 0;
+
+            if (root.TryGetProperty("x", out var xProp)) x = xProp.GetSingle();
+            if (root.TryGetProperty("y", out var yProp)) y = yProp.GetSingle();
+            if (root.TryGetProperty("z", out var zProp)) z = zProp.GetSingle();
+
+            // Build a vec3 value type and set position via Transform
+            var vec3Td = TDB.Get().FindType("via.vec3");
+            var vt = vec3Td.CreateValueType();
+            var vtObj = vt as IObject;
+            vec3Td.FindField("x").SetDataBoxed(vtObj.GetAddress(), x, true);
+            vec3Td.FindField("y").SetDataBoxed(vtObj.GetAddress(), y, true);
+            vec3Td.FindField("z").SetDataBoxed(vtObj.GetAddress(), z, true);
+            tf.Call("set_Position", vtObj);
+
+            return new { ok = true, position = new { x, y, z } };
+        } catch (Exception e) {
+            return new { error = e.Message };
+        }
+    }
+
+    // ── RE2 Enemy List ───────────────────────────────────────────────────
+
+    static object GetEnemiesRE2() {
+        try {
+            var em = API.GetManagedSingleton("app.ropeway.EnemyManager");
+            if (em == null) return new { error = "EnemyManager not available" };
+            var emObj = em as IObject;
+
+            bool playerInSafeRoom = false;
+            try { playerInSafeRoom = (bool)emObj.Call("get_PlayerInSafeRoom"); } catch { }
+
+            uint totalKills = 0;
+            try { totalKills = Convert.ToUInt32(emObj.Call("getEnemyKillCount").ToString()); } catch { }
+
+            // Player position for distance calc
+            float? playerX = null, playerY = null, playerZ = null;
+            try {
+                var pm = API.GetManagedSingleton("app.ropeway.PlayerManager") as IObject;
+                var posObj = pm?.Call("get_CurrentPosition") as IObject;
+                if (posObj != null) {
+                    playerX = Convert.ToSingle(posObj.GetField("x").ToString());
+                    playerY = Convert.ToSingle(posObj.GetField("y").ToString());
+                    playerZ = Convert.ToSingle(posObj.GetField("z").ToString());
+                }
+            } catch { }
+
+            var enemies = new List<object>();
+            var listObj = emObj.GetField("<ActiveEnemyList>k__BackingField") as IObject;
+            if (listObj != null) {
+                int count = 0;
+                try { count = (int)listObj.Call("get_Count"); } catch { }
+
+                for (int i = 0; i < count; i++) {
+                    try {
+                        var ec = listObj.Call("get_Item", (object)i) as IObject;
+                        if (ec == null) continue;
+
+                        string kindId = null;
+                        string enemyName = null;
+                        try {
+                            kindId = CallEnumMethod(ec, "get_KindID");
+                            if (kindId != null) {
+                                var code = kindId.Split(' ')[0];
+                                s_re2EnemyNames.TryGetValue(code, out enemyName);
+                            }
+                        } catch { }
+
+                        // HP from EnemyHitPointController
+                        int? hp = null, maxHp = null;
+                        bool? isEnemyDead = null;
+                        try {
+                            var hpc = ec.Call("get_HitPoint") as IObject;
+                            if (hpc != null) {
+                                try { hp = Convert.ToInt32(hpc.Call("get_CurrentHitPoint").ToString()); } catch { }
+                                try { maxHp = Convert.ToInt32(hpc.Call("get_DefaultHitPoint").ToString()); } catch { }
+                                try { isEnemyDead = (bool)hpc.Call("get_IsDead"); } catch { }
+                            }
+                        } catch { }
+
+                        // Position from Transform
+                        float? posX = null, posY = null, posZ = null;
+                        try {
+                            var go = ec.Call("get_GameObject") as IObject;
+                            var tf = go?.Call("get_Transform") as IObject;
+                            if (tf != null) {
+                                var pos = tf.Call("get_Position") as IObject;
+                                if (pos != null) {
+                                    posX = Convert.ToSingle(pos.GetField("x").ToString());
+                                    posY = Convert.ToSingle(pos.GetField("y").ToString());
+                                    posZ = Convert.ToSingle(pos.GetField("z").ToString());
+                                }
+                            }
+                        } catch { }
+
+                        // Distance from player
+                        float? distance = null;
+                        if (playerX.HasValue && posX.HasValue) {
+                            var dx = posX.Value - playerX.Value;
+                            var dy = posY.Value - playerY.Value;
+                            var dz = posZ.Value - playerZ.Value;
+                            distance = (float)Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                        }
+
+                        enemies.Add(new {
+                            kindId,
+                            name = enemyName ?? kindId,
+                            health = hp,
+                            maxHealth = maxHp,
+                            isDead = isEnemyDead,
+                            position = new { x = posX, y = posY, z = posZ },
+                            distance
+                        });
+                    } catch { }
+                }
+            }
+
+            return new {
+                count = enemies.Count,
+                playerInSafeRoom,
+                totalKills,
+                enemies
+            };
+        } catch (Exception e) {
+            return new { error = e.Message };
+        }
+    }
+
+    // ── RE2 Game Info ────────────────────────────────────────────────────
+
+    static object GetGameInfoRE2() {
+        try {
+            var result = new Dictionary<string, object>();
+
+            // Scenario and main state from MainFlowManager
+            try {
+                var mfm = API.GetManagedSingleton("app.ropeway.gamemastering.MainFlowManager") as IObject;
+                if (mfm != null) {
+                    try { result["mainState"] = CallEnumMethod(mfm, "get_MainStateValue"); } catch { }
+                    try { result["scenarioType"] = CallEnumMethod(mfm, "get_CurrentScenarioType"); } catch { }
+                    try { result["difficulty"] = CallEnumMethod(mfm, "get_CurrentDifficulty"); } catch { }
+                    try { result["gameStartType"] = CallEnumMethod(mfm, "get_GameStartValue"); } catch { }
+                    try { result["isInGame"] = (bool)mfm.Call("get_IsInGame"); } catch { }
+                    try { result["isInPause"] = (bool)mfm.Call("get_IsInPause"); } catch { }
+                    try { result["isInTitle"] = (bool)mfm.Call("get_IsInTitle"); } catch { }
+                    try { result["isFirstBoot"] = (bool)mfm.Call("get_IsFirstBoot"); } catch { }
+                    try { result["isLeon"] = (bool)mfm.Call("get_IsLeon"); } catch { }
+                    try { result["isClaire"] = (bool)mfm.Call("get_IsClaire"); } catch { }
+                    try { result["is2ndStory"] = (bool)mfm.Call("get_Is2ndStory"); } catch { }
+                    try { result["isExtraGame"] = (bool)mfm.Call("get_IsExtraGame"); } catch { }
+                    try { result["saveTimes"] = Convert.ToInt32(mfm.Call("get_SaveTimes").ToString()); } catch { }
+                    try {
+                        var loc = CallEnumMethod(mfm, "get_LatestSaveDataLocation");
+                        result["location"] = loc;
+                        if (loc != null) {
+                            var code = loc.Split(' ')[0];
+                            s_re2LocationNames.TryGetValue(code, out var locName);
+                            result["locationName"] = locName ?? code;
+                        }
+                    } catch { }
+                }
+            } catch { }
+
+            // Adaptive difficulty (Game Rank System)
+            try {
+                var grs = API.GetManagedSingleton("app.ropeway.GameRankSystem") as IObject;
+                if (grs != null) {
+                    int? rank = null;
+                    float? rankPoint = null;
+                    float? enemyDamageRate = null, playerDamageRate = null, enemyBreakRate = null;
+                    try { rank = Convert.ToInt32(grs.Call("get_GameRank").ToString()); } catch { }
+                    try { rankPoint = Convert.ToSingle(grs.Call("get_RankPoint").ToString()); } catch { }
+                    try { enemyDamageRate = Convert.ToSingle(grs.Call("getRankEnemyDamageRate").ToString()); } catch { }
+                    try { playerDamageRate = Convert.ToSingle(grs.Call("getRankPlayerDamageRate").ToString()); } catch { }
+                    try { enemyBreakRate = Convert.ToSingle(grs.Call("getRankEnemyBreakRate").ToString()); } catch { }
+                    result["gameRank"] = new {
+                        rank,
+                        rankPoint,
+                        enemyDamageRate,
+                        playerDamageRate,
+                        enemyBreakRate
+                    };
+                }
+            } catch { }
+
+            // Enemy manager state
+            try {
+                var emObj = API.GetManagedSingleton("app.ropeway.EnemyManager") as IObject;
+                if (emObj != null) {
+                    try { result["currentMap"] = CallEnumMethod(emObj, "get_LastPlayerStaySceneID"); } catch { }
+                    try { result["currentArea"] = CallEnumMethod(emObj, "get_LastPlayerStayLocationID"); } catch { }
+                    try { result["playerInSafeRoom"] = (bool)emObj.Call("get_PlayerInSafeRoom"); } catch { }
+                    try { result["tyrantMap"] = CallEnumMethod(emObj, "getTyrantStayMapID"); } catch { }
+                    try { result["totalEnemyKills"] = Convert.ToUInt32(emObj.Call("getEnemyKillCount").ToString()); } catch { }
                 }
             } catch { }
 
