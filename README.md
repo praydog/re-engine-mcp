@@ -54,6 +54,40 @@ Or use the helper scripts in `mcp-server/` (`install.cmd` / `install.sh`) to reg
 
 Start the game with REFramework loaded. The plugin compiles automatically and starts the HTTP server. The MCP server connects to it on first tool call.
 
+## Web dashboard
+
+Open `http://localhost:8899` in a browser while the game is running. The dashboard auto-detects which game is running and shows the relevant cards:
+
+![RE2 Dashboard](images/re2dashboard.png)
+
+- **Player** -- HP bar with slider, position, status badges (poison, combat, etc.)
+- **Enemies** -- Active enemy list with HP bars, distance, kill tracking
+- **Inventory** -- Item pouch with weapon ammo/durability bars, equipped weapon, item counts
+- **Mr. X Tracker** (RE2) -- Real-time AI state (Chasing/Searching/Stunned/Teleporting), distance proximity bar, location, kill/stun timers, on-screen detection
+- **Game Info** -- Scenario, difficulty, adaptive difficulty rank with damage/break multipliers, save count
+- **Monsters** (MH Wilds) -- Large monster HP, species, position, distance
+- **Weather** (MH Wilds) -- Current/next weather, blend rates, in-game clock
+- **Equipment** -- Weapon stats, armor pieces, decorations
+- **Object explorer** -- Browse singletons, navigate object graphs, inspect fields and methods interactively
+
+Cards that don't apply to the current game are hidden automatically. The same plugin binary, same dashboard code -- it just adapts.
+
+The entire dashboard -- every card, every endpoint, every line of CSS -- was built by AI agents using the MCP tools in this repo. No human wrote the player HP bars, the enemy list, the inventory renderer, or the Mr. X tracker.
+
+The process: an agent explored the live game's object graph to discover what data was available. It wrote API endpoints to expose that data, authored the HTML/JS/CSS to render it, tested against the running game, and iterated until it worked. The full RE2 dashboard -- player, enemies, inventory, game info, Mr. X tracker -- took about 30 minutes.
+
+The per-game detection, the adaptive card visibility, the RE2-specific features -- all autonomously built through the same tools the repo ships. The dashboard is both a useful feature and a proof of what the MCP server makes possible.
+
+## How it works
+
+The game plugin uses REFramework.NET to access the RE Engine's managed object system. Every game object, singleton, type, field, and method is reachable through the type database (TDB). The plugin exposes this as a REST API:
+
+1. **Type queries** go straight to the TDB -- no live instance needed
+2. **Object inspection** reads field values from live objects in the game's managed heap
+3. **Method invocation** calls game methods through REFramework's managed interop layer
+4. **Chain queries** walk the object graph server-side, expanding fields, calling methods, filtering, and collecting results in a single request
+
+The MCP server is a thin translation layer. Each MCP tool maps to one HTTP endpoint. The named pipe channel provides a secondary communication path for compile/log operations that must work before the HTTP plugin is loaded.
 ## Architecture
 
 Three components, each independently useful:
@@ -208,47 +242,6 @@ Then it needed test data. It queried the type database and inspected live single
 > **Tip:** Pair with [IDA Pro MCP](https://github.com/mrexodia/ida-pro-mcp), [Binary Ninja MCP](https://github.com/fosdickio/binary_ninja_mcp), or [Ghidra MCP](https://github.com/bethington/ghidra-mcp) for even deeper reverse engineering. If your disassembler has RE Engine method addresses mapped to names (REFramework ships a Python script for this), the agent can read decompiled function bodies alongside live object inspection. Not required, but powerful when you need to understand what a function actually does rather than just what it's called.
 
 The agent guide (`help` tool) provides detailed navigation paths, chain examples, and tips -- call it first in any new session.
-
-## Web dashboard
-
-Open `http://localhost:8899` in a browser while the game is running. The dashboard auto-detects which game is running and shows the relevant cards:
-
-- **Player** -- HP bar with slider, position, status badges (poison, combat, etc.)
-- **Enemies** -- Active enemy list with HP bars, distance, kill tracking
-- **Inventory** -- Item pouch with weapon ammo/durability bars, equipped weapon, item counts
-- **Mr. X Tracker** (RE2) -- Real-time AI state (Chasing/Searching/Stunned/Teleporting), distance proximity bar, location, kill/stun timers, on-screen detection
-- **Game Info** -- Scenario, difficulty, adaptive difficulty rank with damage/break multipliers, save count
-- **Monsters** (MH Wilds) -- Large monster HP, species, position, distance
-- **Weather** (MH Wilds) -- Current/next weather, blend rates, in-game clock
-- **Equipment** -- Weapon stats, armor pieces, decorations
-- **Object explorer** -- Browse singletons, navigate object graphs, inspect fields and methods interactively
-
-Cards that don't apply to the current game are hidden automatically. The same plugin binary, same dashboard code -- it just adapts.
-
-The entire dashboard -- every card, every endpoint, every line of CSS -- was built by AI agents using the MCP tools in this repo. No human wrote the player HP bars, the enemy list, the inventory renderer, or the Mr. X tracker.
-
-The process: an agent explored the live game's object graph to discover what data was available. It wrote API endpoints to expose that data, authored the HTML/JS/CSS to render it, tested against the running game, and iterated until it worked. The full RE2 dashboard -- player, enemies, inventory, game info, Mr. X tracker -- took about 30 minutes.
-
-The per-game detection, the adaptive card visibility, the RE2-specific features -- all autonomously built through the same tools the repo ships. The dashboard is both a useful feature and a proof of what the MCP server makes possible.
-
-## Configuration
-
-| Environment variable | Default | Description |
-|---------------------|---------|-------------|
-| `REFRAMEWORK_API_URL` | `http://localhost:8899` | URL of the in-game HTTP API |
-
-The plugin listens on port 8899 by default. Change `s_port` in `TestWebAPI.cs` to use a different port, and set `REFRAMEWORK_API_URL` accordingly.
-
-## How it works
-
-The game plugin uses REFramework.NET to access the RE Engine's managed object system. Every game object, singleton, type, field, and method is reachable through the type database (TDB). The plugin exposes this as a REST API:
-
-1. **Type queries** go straight to the TDB -- no live instance needed
-2. **Object inspection** reads field values from live objects in the game's managed heap
-3. **Method invocation** calls game methods through REFramework's managed interop layer
-4. **Chain queries** walk the object graph server-side, expanding fields, calling methods, filtering, and collecting results in a single request
-
-The MCP server is a thin translation layer. Each MCP tool maps to one HTTP endpoint. The named pipe channel provides a secondary communication path for compile/log operations that must work before the HTTP plugin is loaded.
 
 ## License
 
