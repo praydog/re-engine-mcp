@@ -58,7 +58,7 @@ Start the game with REFramework loaded. The plugin compiles automatically and st
 
 Open `http://localhost:8899` in a browser while the game is running. The dashboard auto-detects which game is running and shows the relevant cards:
 
-![RE2 Dashboard](images/re2dashboard.png)
+<a href="images/re2dashboard.png"><img src="images/re2dashboard.png" alt="RE2 Dashboard" width="600"></a>
 
 - **Player** -- HP bar with slider, position, status badges (poison, combat, etc.)
 - **Enemies** -- Active enemy list with HP bars, distance, kill tracking
