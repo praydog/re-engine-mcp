@@ -22,6 +22,26 @@ class REFrameworkWebAPI {
         { ".js",   "application/javascript; charset=utf-8" },
     };
 
+    // Enum boxing helper — method name differs across RE Engine versions.
+    // RE9+: InternalBoxEnum(RuntimeType, Int64), RE2/older: boxEnum(Type, Int64)
+    static REFrameworkNET.Method s_boxEnumMethod;
+    static REFrameworkNET.Method GetBoxEnumMethod() {
+        if (s_boxEnumMethod != null) return s_boxEnumMethod;
+        var enumTd = TDB.Get().FindType("System.Enum");
+        if (enumTd == null) return null;
+        s_boxEnumMethod = enumTd.FindMethod("InternalBoxEnum") ?? enumTd.FindMethod("boxEnum");
+        return s_boxEnumMethod;
+    }
+    static IObject BoxEnum(REFrameworkNET.TypeDefinition enumType, long value) {
+        var m = GetBoxEnumMethod();
+        if (m == null) return null;
+        var rt = enumType.GetRuntimeType();
+        if (rt == null) return null;
+        var ret = m.Invoke(null, new object[] { rt, value });
+        if (ret.Ptr == 0) return null;
+        return ManagedObject.ToManagedObject(ret.Ptr) as IObject;
+    }
+
     [PluginEntryPoint]
     public static void Main() {
         try {
@@ -1463,7 +1483,7 @@ class REFrameworkWebAPI {
         if (ft.IsEnum()) {
             long longValue = Convert.ToInt64(fieldData);
             try {
-                var boxedEnum = _System.Enum.InternalBoxEnum(ft.GetRuntimeType().As<_System.RuntimeType>(), longValue);
+                var boxedEnum = BoxEnum(ft, longValue);
                 return (boxedEnum as IObject).Call("ToString()") + " (" + fieldData.ToString() + ")";
             } catch {
                 return fieldData.ToString();
@@ -1625,8 +1645,7 @@ class REFrameworkWebAPI {
             } else {
                 return null;
             }
-            return _System.Enum.InternalBoxEnum(
-                tdef.GetRuntimeType().As<_System.RuntimeType>(), longValue);
+            return BoxEnum(tdef, longValue) as ManagedObject;
         }
 
         // Value type (struct): create instance and populate fields from JSON object
@@ -1708,7 +1727,7 @@ class REFrameworkWebAPI {
         if (returnType != null && returnType.IsEnum()) {
             long longValue = Convert.ToInt64(result);
             try {
-                var boxedEnum = _System.Enum.InternalBoxEnum(returnType.GetRuntimeType().As<_System.RuntimeType>(), longValue);
+                var boxedEnum = BoxEnum(returnType, longValue);
                 return new { isObject = false, value = (boxedEnum as IObject).Call("ToString()") + " (" + result.ToString() + ")" };
             } catch { }
         }
@@ -2195,7 +2214,7 @@ class REFrameworkWebAPI {
                     var gcObj = gc as IObject;
                     var timerTd = TDB.Get().FindType("app.OperationTimerType");
                     if (timerTd != null) {
-                        var enumVal = _System.Enum.InternalBoxEnum(timerTd.GetRuntimeType().As<_System.RuntimeType>(), 2); // GameElapsedTime = 2
+                        var enumVal = BoxEnum(timerTd, 2); // GameElapsedTime = 2
                         var gameTime = gcObj.Call("getElapsedTime", enumVal);
                         if (gameTime != null) {
                             var us = Convert.ToInt64(gameTime.ToString());
@@ -2792,7 +2811,7 @@ class REFrameworkWebAPI {
             if (returnType != null && returnType.IsEnum()) {
                 long longValue = Convert.ToInt64(result);
                 try {
-                    var boxedEnum = _System.Enum.InternalBoxEnum(returnType.GetRuntimeType().As<_System.RuntimeType>(), longValue);
+                    var boxedEnum = BoxEnum(returnType, longValue);
                     return new { isObject = false, value = (boxedEnum as IObject).Call("ToString()") + " (" + result.ToString() + ")" };
                 } catch { }
             }
