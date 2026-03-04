@@ -976,6 +976,103 @@ async function updateStalker() {
   }
 }
 
+// ── Run Stats ─────────────────────────────────────────────────────────
+
+function fmtTime(totalSec) {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.floor(totalSec % 60);
+  return h > 0 ? `${h}h ${m}m ${s}s` : m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+async function updateStats() {
+  try {
+    const d = await fetchJson('/api/stats');
+    const el = document.getElementById('stats-content');
+    if (d.error) { setDot('stats-card', false); el.innerHTML = `<span class='error-msg'>${d.error}</span>`; return; }
+    setDot('stats-card', true);
+
+    const row = (label, val) => `<div class='stats-row'><span class='stats-label'>${label}</span><span class='stats-value'>${val}</span></div>`;
+    let html = '';
+
+    // Play time
+    if (d.recordTime) html += row('Play Time', `<span class='stats-highlight'>${d.recordTime}</span>`);
+
+    // Time breakdown
+    if (d.time) {
+      const t = d.time;
+      const pct = (v) => t.totalSeconds > 0 ? Math.round(v / t.totalSeconds * 100) : 0;
+      html += `<div class='stats-time-bar'>`;
+      html += `<div class='stats-time-seg stats-time-playing' style='width:${pct(t.playingSeconds)}%' data-tip='Gameplay: ${fmtTime(t.playingSeconds)}'></div>`;
+      html += `<div class='stats-time-seg stats-time-cutscene' style='width:${pct(t.cutsceneSeconds)}%' data-tip='Cutscenes: ${fmtTime(t.cutsceneSeconds)}'></div>`;
+      html += `<div class='stats-time-seg stats-time-inventory' style='width:${pct(t.inventorySeconds)}%' data-tip='Inventory: ${fmtTime(t.inventorySeconds)}'></div>`;
+      html += `<div class='stats-time-seg stats-time-pause' style='width:${pct(t.pauseSeconds)}%' data-tip='Paused: ${fmtTime(t.pauseSeconds)}'></div>`;
+      html += `</div>`;
+      html += `<div class='stats-time-legend'>`;
+      html += `<span><span class='stats-dot stats-time-playing'></span>Play ${fmtTime(t.playingSeconds)}</span>`;
+      html += `<span><span class='stats-dot stats-time-cutscene'></span>Cutscene ${fmtTime(t.cutsceneSeconds)}</span>`;
+      html += `<span><span class='stats-dot stats-time-inventory'></span>Inventory ${fmtTime(t.inventorySeconds)}</span>`;
+      html += `<span><span class='stats-dot stats-time-pause'></span>Pause ${fmtTime(t.pauseSeconds)}</span>`;
+      html += `</div>`;
+    }
+
+    // Run counters
+    if (d.steps != null) html += row('Steps', d.steps.toLocaleString());
+    if (d.healsUsed != null) html += row('Heals Used', d.healsUsed);
+    if (d.saveCount != null) html += row('Saves', d.saveCount);
+    if (d.itemBoxOpens != null) html += row('Item Box Opens', d.itemBoxOpens);
+    if (d.usedSpecialWeapon) html += row('Special Weapon', '<span class="badge badge-warn">Used</span>');
+    if (d.usedAimAssist) html += row('Aim Assist', '<span class="badge badge-warn">Used</span>');
+
+    // Collectibles
+    if (d.collectibles) {
+      const c = d.collectibles;
+      const bar = (label, opened, total) => {
+        const pct = total > 0 ? Math.round(opened / total * 100) : 0;
+        return `<div class='stats-collect'><span class='stats-label'>${label}</span>` +
+          `<div class='stats-collect-bar'><div class='stats-collect-fill' style='width:${pct}%'></div></div>` +
+          `<span class='stats-collect-num'>${opened}/${total}</span></div>`;
+      };
+      html += bar('Concept Art', c.conceptArt.opened, c.conceptArt.total);
+      html += bar('Figures', c.figures.opened, c.figures.total);
+    }
+
+    // Scenario clears
+    if (d.scenarioClears) {
+      const sc = d.scenarioClears;
+      const check = (v) => v ? '\u2705' : '\u2B1C';
+      html += `<div class='stats-scenarios'>`;
+      html += `<span class='stats-label'>Scenarios</span>`;
+      html += `<div class='stats-scenario-grid'>`;
+      html += `<span></span><span class='stats-scenario-hdr'>1st</span><span class='stats-scenario-hdr'>2nd</span>`;
+      html += `<span>Leon</span><span>${check(sc.leon1st)}</span><span>${check(sc.leon2nd)}</span>`;
+      html += `<span>Claire</span><span>${check(sc.claire1st)}</span><span>${check(sc.claire2nd)}</span>`;
+      html += `</div></div>`;
+    }
+
+    // Unlocks
+    if (d.unlocks) {
+      const u = d.unlocks;
+      const badges = [];
+      if (u.the4thSurvivor) badges.push('4th Survivor');
+      if (u.tofu) badges.push('Tofu');
+      if (u.hardMode) badges.push('Hardcore');
+      if (u.rogue) badges.push('Ghost Survivors');
+      if (u.claireB) badges.push('Claire B');
+      if (u.leonB) badges.push('Leon B');
+      if (badges.length > 0) {
+        html += `<div class='stats-row'><span class='stats-label'>Unlocks</span>` +
+          `<span class='stats-badges'>${badges.map(b => `<span class='badge badge-ok'>${b}</span>`).join(' ')}</span></div>`;
+      }
+    }
+
+    el.innerHTML = html;
+  } catch(e) {
+    setDot('stats-card', false);
+    document.getElementById('stats-content').innerHTML = `<span class='error-msg'>${e.message}</span>`;
+  }
+}
+
 // ── Game Info ────────────────────────────────────────────────────────
 
 const weaponCategoryIcons = {
@@ -1299,6 +1396,7 @@ async function initDashboard() {
     '/api/gameinfo': 'gameinfo-card',
     '/api/monsters': 'monsters-card',
     '/api/stalker': 'stalker-card',
+    '/api/stats': 'stats-card',
   };
   for (const [ep, cardId] of Object.entries(cardMap)) {
     if (!has(ep)) {
@@ -1325,6 +1423,7 @@ async function initDashboard() {
   if (has('/api/enemies'))   { updateEnemies();   setInterval(updateEnemies, 1000); }
   if (has('/api/stalker'))   { updateStalker();   setInterval(updateStalker, 1000); }
   if (has('/api/gameinfo'))  { updateGameInfo();  setInterval(updateGameInfo, 3000); }
+  if (has('/api/stats'))     { updateStats();     setInterval(updateStats, 5000); }
 }
 
 async function poll() {

@@ -187,6 +187,7 @@ class REFrameworkWebAPI {
                     "/api/gameinfo" => GetGameInfoRE2(),
                     "/api/inventory" => GetInventoryRE2(),
                     "/api/stalker" => GetStalkerRE2(),
+                    "/api/stats" => GetStatsRE2(),
 #endif
                     _ => null
                 };
@@ -269,7 +270,7 @@ class REFrameworkWebAPI {
 #elif RE9
         endpoints.AddRange(new[] { "/api/player", "/api/enemies", "/api/gameinfo" });
 #elif RE2
-        endpoints.AddRange(new[] { "/api/player", "/api/enemies", "/api/gameinfo", "/api/inventory", "/api/stalker" });
+        endpoints.AddRange(new[] { "/api/player", "/api/enemies", "/api/gameinfo", "/api/inventory", "/api/stalker", "/api/stats" });
 #endif
         return new {
             name = "REFramework.NET Web API",
@@ -2874,11 +2875,11 @@ class REFrameworkWebAPI {
             } catch { }
             try { isGhostMode = (bool)ctrl.Call("get_IsGhostMode"); } catch { }
             try { isActiveArea = (bool)ctrl.GetField("IsActiveArea"); } catch { }
-            try { alwaysChaserMode = (bool)ctrl.GetField("AlwaysChaserMode"); } catch { }
+            try { alwaysChaserMode = (bool)ctrl.Call("get_AlwaysChaserMode"); } catch { }
             try { isTargetInSafeRoom = (bool)ctrl.Call("get_IsTargetInSafeRoom"); } catch { }
             try { stayMapID = CallEnumMethod(ctrl, "get_StayMapID"); } catch { }
             try { stayLocationID = CallEnumMethod(ctrl, "get_StayLocationID"); } catch { }
-            try { alwaysChaserDisableTimer = Convert.ToSingle(ctrl.GetField("AlwaysChaserDisableTimer").ToString()); } catch { }
+            try { alwaysChaserDisableTimer = Convert.ToSingle(ctrl.Call("get_AlwaysChaserDisableTimer").ToString()); } catch { }
 
             // Resolve location name
             string locationName = null;
@@ -2948,6 +2949,94 @@ class REFrameworkWebAPI {
         } catch (Exception e) {
             return new { error = e.Message };
         }
+    }
+
+    // ── RE2 Run Stats ────────────────────────────────────────────────────
+
+    static object GetStatsRE2() {
+        try {
+            var result = new Dictionary<string, object>();
+
+            // Play time from GameClock (values in microseconds)
+            try {
+                var clock = API.GetManagedSingleton("app.ropeway.GameClock") as IObject;
+                if (clock != null) {
+                    long gameElapsed = 0, actualPlaying = 0, inventoryTime = 0, pauseTime = 0, demoTime = 0, inSceneTime = 0;
+                    try { gameElapsed = Convert.ToInt64(clock.Call("get_GameElapsedTime").ToString()); } catch { }
+                    try { actualPlaying = Convert.ToInt64(clock.Call("get_ActualPlayingTime").ToString()); } catch { }
+                    try { inventoryTime = Convert.ToInt64(clock.Call("get_InventorySpendingTime").ToString()); } catch { }
+                    try { pauseTime = Convert.ToInt64(clock.Call("get_PauseSpendingTime").ToString()); } catch { }
+                    try { demoTime = Convert.ToInt64(clock.Call("get_DemoSpendingTime").ToString()); } catch { }
+                    try { inSceneTime = Convert.ToInt64(clock.Call("get_InSceneTime").ToString()); } catch { }
+                    result["time"] = new {
+                        totalSeconds = Math.Round(gameElapsed / 1000000.0, 1),
+                        playingSeconds = Math.Round(actualPlaying / 1000000.0, 1),
+                        inventorySeconds = Math.Round(inventoryTime / 1000000.0, 1),
+                        pauseSeconds = Math.Round(pauseTime / 1000000.0, 1),
+                        cutsceneSeconds = Math.Round(demoTime / 1000000.0, 1),
+                        inSceneSeconds = Math.Round(inSceneTime / 1000000.0, 1)
+                    };
+                }
+            } catch { }
+
+            // Record stats from RecordManager
+            try {
+                var rec = API.GetManagedSingleton("app.ropeway.gamemastering.RecordManager") as IObject;
+                if (rec != null) {
+                    // Formatted play time
+                    int hours = 0, minutes = 0, seconds = 0;
+                    try { hours = Convert.ToInt32(rec.Call("get_RecordHour").ToString()); } catch { }
+                    try { minutes = Convert.ToInt32(rec.Call("get_RecordMinute").ToString()); } catch { }
+                    try { seconds = Convert.ToInt32(rec.Call("get_RecordSecond").ToString()); } catch { }
+                    result["recordTime"] = $"{hours}:{minutes:D2}:{seconds:D2}";
+
+                    // Run counters
+                    try { result["steps"] = Convert.ToInt32(rec.Call("get_NumberOfSteps").ToString()); } catch { }
+                    try { result["healsUsed"] = Convert.ToInt32(rec.Call("get_UseHealItem").ToString()); } catch { }
+                    try { result["saveCount"] = Convert.ToInt32(rec.Call("get_CurrentSaveCount").ToString()); } catch { }
+                    try { result["itemBoxOpens"] = Convert.ToInt32(rec.Call("get_OpenItemBox").ToString()); } catch { }
+                    try { result["usedSpecialWeapon"] = (bool)rec.Call("get_UseSpecialWeapon"); } catch { }
+                    try { result["usedAimAssist"] = (bool)rec.Call("get_UseAimAssist"); } catch { }
+
+                    // Collectibles
+                    int conceptArtTotal = 0, conceptArtOpened = 0, figureTotal = 0, figureOpened = 0;
+                    try { conceptArtTotal = Convert.ToInt32(rec.Call("getConceptArtCount").ToString()); } catch { }
+                    try { conceptArtOpened = Convert.ToInt32(rec.Call("getConceptArtCountOpened").ToString()); } catch { }
+                    try { figureTotal = Convert.ToInt32(rec.Call("getFigureCount").ToString()); } catch { }
+                    try { figureOpened = Convert.ToInt32(rec.Call("getFigureCountOpened").ToString()); } catch { }
+                    result["collectibles"] = new {
+                        conceptArt = new { opened = conceptArtOpened, total = conceptArtTotal },
+                        figures = new { opened = figureOpened, total = figureTotal }
+                    };
+
+                    // Scenario clears
+                    result["scenarioClears"] = new {
+                        leon1st = SafeBool(rec, "get_IsClearedMainScenario1stLeon"),
+                        claire1st = SafeBool(rec, "get_IsClearedMainScenario1stClaire"),
+                        leon2nd = SafeBool(rec, "get_IsClearedMainScenario2ndLeon"),
+                        claire2nd = SafeBool(rec, "get_IsClearedMainScenario2ndClaire")
+                    };
+
+                    // Unlocks
+                    result["unlocks"] = new {
+                        the4thSurvivor = SafeBool(rec, "get_IsOpened4th"),
+                        tofu = SafeBool(rec, "get_IsOpenedTofu"),
+                        hardMode = SafeBool(rec, "get_IsOpenedHardMode"),
+                        rogue = SafeBool(rec, "get_IsOpenedRogue"),
+                        claireB = SafeBool(rec, "get_IsOpenedClaireB"),
+                        leonB = SafeBool(rec, "get_IsOpenedLeonB")
+                    };
+                }
+            } catch { }
+
+            return result;
+        } catch (Exception e) {
+            return new { error = e.Message };
+        }
+    }
+
+    static bool SafeBool(IObject obj, string method) {
+        try { return (bool)obj.Call(method); } catch { return false; }
     }
 #endif
 

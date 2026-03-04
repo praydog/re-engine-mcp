@@ -119,6 +119,10 @@ public static class ConvenienceTools
     [McpServerTool(Name = "reframework_get_stalker")]
     [Description("Get Mr. X (Tyrant) tracker: status, AI state, distance to player, location, timers (RE2 only)")]
     public static async Task<string> GetStalker() => await Http.Get("/api/stalker");
+
+    [McpServerTool(Name = "reframework_get_stats")]
+    [Description("Get run stats: play time breakdown, steps, heals used, saves, item box opens, collectibles progress, scenario clears, unlocks (RE2 only)")]
+    public static async Task<string> GetStats() => await Http.Get("/api/stats");
     [McpServerTool(Name = "reframework_get_weather")]
     [Description("Get current weather, next weather, blend rates, in-game clock time")]
     public static async Task<string> GetWeather() => await Http.Get("/api/weather");
