@@ -2,22 +2,57 @@
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that gives AI agents live, programmatic access to any running RE Engine game -- Resident Evil, Monster Hunter, Devil May Cry, Dragon's Dogma, and more.
 
-Connect any MCP-compatible agent or IDE to a running game and it can inspect every object in memory, read and write fields, call methods, navigate the full type database, search singletons, and chain multi-step queries across the object graph. It turns a running game into a fully introspectable, queryable system that an agent can reason about and manipulate in real time.
+- **Inspect everything.** 100,000+ types, every singleton, every field, every method -- searchable and navigable from a running game. Call any method, chain multi-step queries across the object graph, batch operations in a single request.
+- **Read and write live state.** Player health, enemy AI, inventory, position, equipment -- the agent sees what the game sees, in real time.
+- **Build mods in-conversation.** Write C# plugins, hot-reload them into the running game, read compile errors, fix, redeploy -- full development loop, no human in the middle.
+- **Works across games.** Same tools work on RE2, Monster Hunter Wilds, RE9, DMC5, DD2, and any other RE Engine title. Per-game endpoints (Mr. X tracker, monster HP, adaptive difficulty) light up automatically.
 
-But inspection is just the starting point. The agent can write C# plugins, deploy them into the running game via hot-reload, read back compile errors and logs, fix issues, and iterate -- all autonomously within a single conversation. It's a complete development loop: discover how something works by probing live objects, write code that changes it, test that the change took effect, and repeat until done.
+The [web dashboard](#web-dashboard) -- player stats, enemy lists, inventory, Mr. X real-time tracker -- was built entirely by AI agents using these MCP tools, in single conversations, without prior knowledge of each game's internals.
 
-## What can it do?
+## Setup
 
-With the game running, an AI agent can:
+### Prerequisites
 
-- **Explore the type system.** Search 100,000+ types by name, inspect fields, methods, inheritance -- the entire type database is queryable.
-- **Navigate live objects.** Start from any singleton, walk reference fields, expand arrays, filter by method return values, and collect data across object graphs -- all in a single chained query.
-- **Read and write game state.** Get/set player health, position, inventory. Read equipment stats, quest progress, weather, lobby members. Toggle material visibility on meshes.
-- **Call any method.** Invoke instance or static methods with typed arguments (int, float, bool, string, enum, struct). Great for triggering game behaviors or reading computed properties.
-- **Batch operations.** Combine multiple reads/writes into a single request. No round-trip overhead.
-- **Localize text.** Resolve message GUIDs to localized strings (item names, quest descriptions, UI text).
-- **Monitor plugin state.** Check compile status, read logs, wait for hot-reload cycles to complete -- all via a named pipe that works even when the HTTP API is down.
-- **Build mods live.** Write a C# plugin, save it, and the MCP server reports compile errors and logs in real time. The agent iterates on code without ever leaving the conversation.
+- [REFramework nightly build](https://github.com/praydog/REFramework-nightly/releases) installed for your game. **You must use a nightly build** -- stable releases do not include .NET support.
+- `csharp-api.zip` from the [same nightly releases page](https://github.com/praydog/REFramework-nightly/releases). Extract it into your game's `reframework/` folder to get the .NET runtime and reference assemblies the plugin needs.
+- [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) -- required by the C# API and the MCP server. Install the SDK if you want to build the MCP server from source, or just the runtime if using a pre-built release.
+
+### 1. Install the game plugin
+
+Copy the `reframework/` folder into your game directory. It mirrors the exact folder structure REFramework expects:
+
+```
+<game>/reframework/plugins/source/TestWebAPI.cs
+<game>/reframework/plugins/source/WebAPI/
+```
+
+REFramework will hot-compile the plugin on next game launch. You should see `[WebAPI] Listening on http://localhost:8899/` in the REFramework log.
+
+### 2. Connect an MCP client
+
+The repo root contains `.mcp.json` — agents that support workspace-level MCP config (Claude Code, Cursor, etc.) will detect it automatically when you open the project.
+
+To register manually with any MCP client, add this to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "reframework": {
+      "command": "dotnet",
+      "args": ["run", "--project", "/path/to/mcp-server"],
+      "env": {
+        "REFRAMEWORK_API_URL": "http://localhost:8899"
+      }
+    }
+  }
+}
+```
+
+Or use the helper scripts in `mcp-server/` (`install.cmd` / `install.sh`) to register via the `claude` CLI.
+
+### 3. Launch the game
+
+Start the game with REFramework loaded. The plugin compiles automatically and starts the HTTP server. The MCP server connects to it on first tool call.
 
 ## Architecture
 
@@ -80,51 +115,6 @@ The plugin has per-game convenience endpoints gated behind preprocessor symbols 
 | **Localization** | `localize_guid` | Resolve message GUIDs to localized text |
 | **Dev tools** | `compile_status`, `wait_compile`, `get_errors`, `clear_errors`, `get_log`, `clear_log` | Monitor hot-reload, read compile errors, tail logs |
 | **System** | `get_game_info`, `get_plugins`, `help` | Game paths, loaded plugins, agent navigation guide |
-
-## Setup
-
-### Prerequisites
-
-- [REFramework nightly build](https://github.com/praydog/REFramework-nightly/releases) installed for your game. **You must use a nightly build** -- stable releases do not include .NET support.
-- `csharp-api.zip` from the [same nightly releases page](https://github.com/praydog/REFramework-nightly/releases). Extract it into your game's `reframework/` folder to get the .NET runtime and reference assemblies the plugin needs.
-- [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) -- required by the C# API and the MCP server. Install the SDK if you want to build the MCP server from source, or just the runtime if using a pre-built release.
-
-### 1. Install the game plugin
-
-Copy the `reframework/` folder into your game directory. It mirrors the exact folder structure REFramework expects:
-
-```
-<game>/reframework/plugins/source/TestWebAPI.cs
-<game>/reframework/plugins/source/WebAPI/
-```
-
-REFramework will hot-compile the plugin on next game launch. You should see `[WebAPI] Listening on http://localhost:8899/` in the REFramework log.
-
-### 2. Connect an MCP client
-
-The repo root contains `.mcp.json` — agents that support workspace-level MCP config (Claude Code, Cursor, etc.) will detect it automatically when you open the project.
-
-To register manually with any MCP client, add this to your MCP config:
-
-```json
-{
-  "mcpServers": {
-    "reframework": {
-      "command": "dotnet",
-      "args": ["run", "--project", "/path/to/mcp-server"],
-      "env": {
-        "REFRAMEWORK_API_URL": "http://localhost:8899"
-      }
-    }
-  }
-}
-```
-
-Or use the helper scripts in `mcp-server/` (`install.cmd` / `install.sh`) to register via the `claude` CLI.
-
-### 3. Launch the game
-
-Start the game with REFramework loaded. The plugin compiles automatically and starts the HTTP server. The MCP server connects to it on first tool call.
 
 ## Usage examples
 
