@@ -115,6 +115,7 @@ These differ per game. Use `get_singletons` to discover them.
 - **Fields with `isValueType: true`** have values inline. Reference-type fields need `read_field` to follow the pointer.
 - **Array pagination**: 50 elements default. Use `offset` and `count`.
 - **For large `Def` types** (e.g. `app.EnemyDef`, `app.WeaponDef`) with hundreds of static fields, inspect with `noFields=true` — you only need the methods.
+- **`GetField()` uses raw field names, not property names.** Auto-properties have backing fields named `<PropertyName>k__BackingField`, not `PropertyName`. `obj.GetField("AlwaysChaserMode")` silently returns null — you need `obj.Call("get_AlwaysChaserMode")` instead. Use typed proxies (`obj.As<T>().AlwaysChaserMode`) for compile-time safe property access, or `Call("get_...")` for the reflection path. Only use `GetField()` for actual declared fields (check `get_type` to see the real field names).
 
 ## Plugin Development
 
