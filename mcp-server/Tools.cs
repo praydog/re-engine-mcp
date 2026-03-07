@@ -86,9 +86,33 @@ public static class PipeTools
 [McpServerToolType]
 public static class GuideTools
 {
+    static readonly string? AgentMdPath = ResolveAgentMd();
+
+    static string? ResolveAgentMd()
+    {
+        // Walk up from the assembly directory to find the repo root containing reframework/
+        var dir = Path.GetDirectoryName(typeof(GuideTools).Assembly.Location);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir, "reframework", "plugins", "source", "WebAPI", "AGENT.md");
+            if (File.Exists(candidate)) return candidate;
+            dir = Path.GetDirectoryName(dir);
+        }
+        return null;
+    }
+
     [McpServerTool(Name = "reframework_help")]
     [Description("Get the agent guide for navigating the game engine. Returns navigation paths, chain examples (lobby members, player equipment, health), key singletons, gotchas, and tips. **Call this FIRST in a new session before exploring** — it will save many round-trips by showing you the exact paths to common data.")]
-    public static async Task<string> Help() => await Http.Get("/api/help");
+    public static async Task<string> Help()
+    {
+        try { return await Http.Get("/api/help"); }
+        catch { /* game not running — fall through to local file */ }
+
+        if (AgentMdPath is not null && File.Exists(AgentMdPath))
+            return await File.ReadAllTextAsync(AgentMdPath);
+
+        return "{\"error\": \"AGENT.md not found. Ensure the MCP server is run from the re-engine-mcp repo root, or start the game.\"}" ;
+    }
 }
 
 // ── Convenience GET endpoints ───────────────────────────────────────
