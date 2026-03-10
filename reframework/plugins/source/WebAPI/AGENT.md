@@ -22,6 +22,7 @@ This document is for AI agents using the MCP tools to explore and interact with 
 - **Use `localize_guid` for ALL GUID→text resolution.** Supports batch (comma-separated). Never manually call `via.gui.message.get()`.
 - **Addresses change between sessions.** Always resolve singletons by type name.
 - **The game must be past the title screen** for most game-specific singletons. Engine singletons like `via.Application` are always available.
+- **NEVER guess at REFramework APIs, installation steps, or scripting patterns.** The docs below are the source of truth. Before writing or reviewing any mod/plugin code, you MUST fetch and read the relevant doc page. Guessing produces hallucinated APIs, wrong install paths, and missing prerequisites. If you're working with C# plugins, start with the [C# Introduction](https://cursey.github.io/reframework-book/api_cs/general/). If Lua, start with [General notes](https://cursey.github.io/reframework-book/api/general/). For definitive proof beyond the docs, read the [REFramework.NET source code](https://github.com/praydog/REFramework/tree/master/csharp-api) directly — if you have shell access, `git clone --depth 1 https://github.com/praydog/REFramework.git` and browse `csharp-api/` locally for faster traversal. Fetch the URL, read it, then act.
 
 ## Chain Queries
 
@@ -245,4 +246,4 @@ For writing Lua scripts and C# plugins:
 ### Tools
   - [Object Explorer](https://cursey.github.io/reframework-book/object_explorer/object_explorer.html) — understanding the type system, singletons, fields, methods
 
-When writing mods, **read the relevant scripting docs first** before guessing at APIs. The Lua and C# surfaces have different capabilities and idioms.
+**You MUST fetch and read the relevant doc pages above before writing any mod code, answering questions about installation/setup, or reviewing plugin code.** Do not rely on your training data for REFramework APIs — it is outdated or wrong. The URLs above are live and authoritative. If the docs are ambiguous or incomplete, read the [REFramework.NET source](https://github.com/praydog/REFramework/tree/master/csharp-api) directly — it is the definitive reference. Fetch them.

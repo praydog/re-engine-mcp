@@ -314,6 +314,27 @@ public static class ExplorerWriteTools
         => await Http.Post("/api/explorer/chain", new { start, steps });
 }
 
+// ── Memory reading endpoints ────────────────────────────────────────
+
+[McpServerToolType]
+public static class MemoryTools
+{
+    [McpServerTool(Name = "reframework_read_memory")]
+    [Description("Read N bytes at an address (raw hex dump). Returns hex dump with ASCII sidebar, like a hex editor. Use for inspecting raw memory layout, finding struct fields, or verifying pointer targets.")]
+    public static async Task<string> ReadMemory(
+        [Description("Memory address (hex, e.g. 0x1234ABCD)")] string address,
+        [Description("Number of bytes to read (default 256, max 8192)")] int? size = null)
+        => await Http.Get("/api/memory", new() { ["address"] = address, ["size"] = size?.ToString() });
+
+    [McpServerTool(Name = "reframework_read_typed")]
+    [Description("Read typed values at a memory address. Use count > 1 to read sequential values (e.g. scan a struct for floats). Supported types: u8, i8, u16, i16, u32, i32, u64, i64, f32, f64, ptr.")]
+    public static async Task<string> ReadTyped(
+        [Description("Memory address (hex, e.g. 0x1234ABCD)")] string address,
+        [Description("Value type: u8, i8, u16, i16, u32, i32, u64, i64, f32, f64, ptr")] string type,
+        [Description("Number of sequential values to read (default 1, max 256). Each value is read at address + i*sizeof(type).")] int? count = null)
+        => await Http.Get("/api/memory/typed", new() { ["address"] = address, ["type"] = type, ["count"] = count?.ToString() });
+}
+
 // ── Materials endpoints ─────────────────────────────────────────────
 
 [McpServerToolType]

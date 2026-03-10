@@ -6,6 +6,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Runtime.InteropServices;
 using REFrameworkNET;
 using REFrameworkNET.Attributes;
 
@@ -161,6 +162,8 @@ class REFrameworkWebAPI {
                     "/api/explorer/type" => GetExplorerType(ctx.Request),
                     "/api/explorer/singleton" => GetExplorerSingleton(ctx.Request),
                     "/api/localize" => ResolveGuid(ctx.Request),
+                    "/api/memory" => ReadMemory(ctx.Request),
+                    "/api/memory/typed" => ReadMemoryTyped(ctx.Request),
 #if MHWILDS
                     "/api/player" => GetPlayerInfo(),
                     "/api/lobby" => GetLobbyMembers(),
@@ -261,7 +264,8 @@ class REFrameworkWebAPI {
             "/api/explorer/singletons", "/api/explorer/singleton",
             "/api/explorer/object", "/api/explorer/summary", "/api/explorer/field", "/api/explorer/method",
             "/api/explorer/array", "/api/explorer/search", "/api/explorer/type",
-            "/api/explorer/batch", "/api/explorer/chain"
+            "/api/explorer/batch", "/api/explorer/chain",
+            "/api/memory", "/api/memory/typed"
         };
 #if MHWILDS
         endpoints.AddRange(new[] { "/api/player", "/api/lobby", "/api/weather", "/api/equipment",
@@ -1398,6 +1402,155 @@ class REFrameworkWebAPI {
         }
 
         return new { count = list.Count, singletons = list };
+    }
+
+    // ── Memory reading ─────────────────────────────────────────────
+
+    static ulong ParseHexAddress(string s) {
+        if (string.IsNullOrEmpty(s)) return 0;
+        if (s.StartsWith("0x") || s.StartsWith("0X"))
+            return Convert.ToUInt64(s.Substring(2), 16);
+        return Convert.ToUInt64(s, 16);
+    }
+
+    static object ReadMemory(HttpListenerRequest request) {
+        var qs = request.QueryString;
+        var addressStr = qs["address"];
+        if (string.IsNullOrEmpty(addressStr))
+            return new { error = "address parameter required (hex, e.g. 0x1234ABCD)" };
+
+        ulong addr;
+        try { addr = ParseHexAddress(addressStr); }
+        catch { return new { error = "Invalid address format" }; }
+        if (addr == 0) return new { error = "Null address" };
+
+        int size = 256;
+        if (!string.IsNullOrEmpty(qs["size"])) {
+            try { size = Math.Clamp(int.Parse(qs["size"]), 1, 8192); }
+            catch { return new { error = "Invalid size" }; }
+        }
+
+        byte[] bytes;
+        try {
+            bytes = new byte[size];
+            Marshal.Copy(new IntPtr((long)addr), bytes, 0, size);
+        } catch (Exception e) {
+            return new { error = $"Failed to read {size} bytes at 0x{addr:X}: {e.Message}" };
+        }
+
+        // Build hex dump lines: ADDR  XX XX .. XX  XX XX .. XX  |ASCII...........|
+        var lines = new List<string>();
+        for (int i = 0; i < size; i += 16) {
+            var count = Math.Min(16, size - i);
+            var hex = new StringBuilder();
+            var ascii = new StringBuilder();
+            for (int j = 0; j < 16; j++) {
+                if (j < count) {
+                    hex.AppendFormat("{0:X2} ", bytes[i + j]);
+                    var b = bytes[i + j];
+                    ascii.Append(b >= 0x20 && b < 0x7F ? (char)b : '.');
+                } else {
+                    hex.Append("   ");
+                }
+                if (j == 7) hex.Append(' ');
+            }
+            lines.Add($"0x{(addr + (ulong)i):X8}  {hex} |{ascii}|");
+        }
+
+        return new {
+            address = "0x" + addr.ToString("X"),
+            size,
+            dump = lines
+        };
+    }
+
+    static object ReadMemoryTyped(HttpListenerRequest request) {
+        var qs = request.QueryString;
+        var addressStr = qs["address"];
+        if (string.IsNullOrEmpty(addressStr))
+            return new { error = "address parameter required" };
+
+        ulong addr;
+        try { addr = ParseHexAddress(addressStr); }
+        catch { return new { error = "Invalid address format" }; }
+        if (addr == 0) return new { error = "Null address" };
+
+        var type = qs["type"] ?? "u64";
+
+        int count = 1;
+        if (!string.IsNullOrEmpty(qs["count"])) {
+            try { count = Math.Clamp(int.Parse(qs["count"]), 1, 256); }
+            catch { return new { error = "Invalid count" }; }
+        }
+
+        int stride = type switch {
+            "u8" or "i8" => 1,
+            "u16" or "i16" => 2,
+            "u32" or "i32" or "f32" => 4,
+            "u64" or "i64" or "f64" or "ptr" or "pointer" => 8,
+            _ => 0
+        };
+        if (stride == 0)
+            return new { error = $"Unknown type '{type}'. Supported: u8, i8, u16, i16, u32, i32, u64, i64, f32, f64, ptr" };
+
+        if (count == 1) {
+            var single = ReadOneTyped(addr, type);
+            if (single is string err)
+                return new { error = err };
+            var (val, hex) = ((object, string))single;
+            return new { address = "0x" + addr.ToString("X"), type, value = val, hex };
+        }
+
+        // Multiple sequential reads
+        var values = new List<object>();
+        for (int i = 0; i < count; i++) {
+            ulong a = addr + (ulong)(i * stride);
+            var result = ReadOneTyped(a, type);
+            if (result is string errMsg) {
+                values.Add(new { offset = i * stride, address = "0x" + a.ToString("X"), error = errMsg });
+            } else {
+                var (v, h) = ((object, string))result;
+                values.Add(new { offset = i * stride, address = "0x" + a.ToString("X"), value = v, hex = h });
+            }
+        }
+        return new { baseAddress = "0x" + addr.ToString("X"), type, count, stride, values };
+    }
+
+    /// <summary>Returns (value, hex) tuple on success, or error string on failure.</summary>
+    static object ReadOneTyped(ulong addr, string type) {
+        var ptr = new IntPtr((long)addr);
+        try {
+            switch (type) {
+                case "u8": { var v = Marshal.ReadByte(ptr); return ((object)v, v.ToString("X2")); }
+                case "i8": { var v = (sbyte)Marshal.ReadByte(ptr); return ((object)v, ((byte)v).ToString("X2")); }
+                case "u16": { var v = (ushort)Marshal.ReadInt16(ptr); return ((object)v, v.ToString("X4")); }
+                case "i16": { var v = Marshal.ReadInt16(ptr); return ((object)v, ((ushort)v).ToString("X4")); }
+                case "u32": { var v = (uint)Marshal.ReadInt32(ptr); return ((object)v, v.ToString("X8")); }
+                case "i32": { var v = Marshal.ReadInt32(ptr); return ((object)v, ((uint)v).ToString("X8")); }
+                case "u64": { var v = (ulong)Marshal.ReadInt64(ptr); return ((object)v, v.ToString("X16")); }
+                case "i64": { var v = Marshal.ReadInt64(ptr); return ((object)v, ((ulong)v).ToString("X16")); }
+                case "f32": {
+                    var b = new byte[4];
+                    Marshal.Copy(ptr, b, 0, 4);
+                    var v = BitConverter.ToSingle(b, 0);
+                    return ((object)v, BitConverter.ToUInt32(b, 0).ToString("X8"));
+                }
+                case "f64": {
+                    var b = new byte[8];
+                    Marshal.Copy(ptr, b, 0, 8);
+                    var v = BitConverter.ToDouble(b, 0);
+                    return ((object)v, BitConverter.ToUInt64(b, 0).ToString("X16"));
+                }
+                case "ptr": case "pointer": {
+                    var v = (ulong)Marshal.ReadInt64(ptr);
+                    return ((object)("0x" + v.ToString("X")), v.ToString("X16"));
+                }
+                default:
+                    return $"Unknown type '{type}'";
+            }
+        } catch (Exception e) {
+            return $"Failed to read {type} at 0x{addr:X}: {e.Message}";
+        }
     }
 
     // ── Explorer helpers ──────────────────────────────────────────────
