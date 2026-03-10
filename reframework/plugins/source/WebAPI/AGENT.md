@@ -12,6 +12,7 @@ This document is for AI agents using the MCP tools to explore and interact with 
 4. **Read** fields and call methods → `summary`, `read_field`, `call_method`
 5. **Navigate** deep object graphs → `chain`
 6. **Write** values → `write_field`, `invoke_method`
+7. **Probe raw memory** (native types, unknown layouts) → `read_memory`, `read_typed`
 
 ## Key Rules
 
@@ -117,6 +118,45 @@ These differ per game. Use `get_singletons` to discover them.
 - **Array pagination**: 50 elements default. Use `offset` and `count`.
 - **For large `Def` types** (e.g. `app.EnemyDef`, `app.WeaponDef`) with hundreds of static fields, inspect with `noFields=true` — you only need the methods.
 - **`GetField()` uses raw field names, not property names.** Auto-properties have backing fields named `<PropertyName>k__BackingField`, not `PropertyName`. `obj.GetField("AlwaysChaserMode")` silently returns null — you need `obj.Call("get_AlwaysChaserMode")` instead. Use typed proxies (`obj.As<T>().AlwaysChaserMode`) for compile-time safe property access, or `Call("get_...")` for the reflection path. Only use `GetField()` for actual declared fields (check `get_type` to see the real field names).
+
+## Raw Memory Reading & Struct Layout Mapping
+
+Two tools let you read live process memory directly:
+
+- **`read_memory(address, size?)`** — hex dump with ASCII sidebar (default 256 bytes, max 8192). Best for scanning large regions.
+- **`read_typed(address, type, count?)`** — read typed values: `u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `f32`, `f64`, `ptr`. With `count > 1`, reads sequential values at `address + i*sizeof(type)`. Max count 50.
+
+### When to use
+
+- **Native types with no declared fields.** Many `via.*` types (e.g. `via.Transform`, `via.Camera`) have `fields: []` in the TDB but store data in native memory. The typed API can only read fields the TDB knows about — raw memory reads bypass this.
+- **Probing unknown struct layouts.** Sweep an object with `read_typed(addr, "f32", count=50)` to find floats, or `read_typed(addr, "ptr", count=32)` to find pointers.
+- **Verifying field offsets.** Cross-reference getter results against raw memory to confirm where data actually lives.
+- **Following raw pointers.** Read a `ptr`, then `read_memory` at that address to explore further.
+
+### Workflow: mapping an unknown struct
+
+1. **Get the object address** via `get_singleton`, `chain`, or `read_field`.
+2. **Get the type size** from `get_type` (the `size` field).
+3. **Read all getter values** using `chain` with a `collect` step — this gives you the ground truth values to search for.
+4. **Hex dump the full object** with `read_memory(address, size)`.
+5. **Sweep with typed reads** — `read_typed(addr, "f32", count=N)` to find floats, `read_typed(addr, "ptr", count=N)` for pointers.
+6. **Match known values to offsets.** Compare getter results to what you see in memory. IEEE 754 hex for floats is unambiguous.
+7. **Validate pointer fields** by feeding discovered addresses back into `summary` or `call_method` with a guessed type. If a method returns a sensible value, you've identified the pointer. `summary` alone is NOT proof — it just overlays a type schema on any address. You must call a method and check the result makes sense.
+
+### Example: via.Transform
+
+```
+get_type("via.Transform")           → size: 256, fields: [] (native, no TDB fields)
+chain → collect get_Position          → {x: 116.43, y: 215.28, z: -152.18}
+read_typed(addr+0x30, "f32", 4)     → [116.43, 215.28, -152.18, 0.0]  ← match!
+read_typed(addr+0x68, "ptr")        → 0x26DDB4F80E0
+call_method(0x26DDB4F80E0, "via.Transform", "get_Position")  → valid position → confirmed child ptr
+```
+
+### Gotcha
+
+- **`read_typed` count is capped at 50.** For larger sweeps, use `read_memory` (hex dump) which handles up to 8192 bytes.
+- **`NativeObject` summary is not validation.** Creating a `NativeObject` at any address with any type will list that type's methods — it doesn't prove the address holds that type. Always call a method and verify the result.
 
 ## Plugin Development
 
