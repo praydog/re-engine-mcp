@@ -1479,7 +1479,7 @@ class REFrameworkWebAPI {
 
         int count = 1;
         if (!string.IsNullOrEmpty(qs["count"])) {
-            try { count = Math.Clamp(int.Parse(qs["count"]), 1, 256); }
+            try { count = Math.Clamp(int.Parse(qs["count"]), 1, 50); }
             catch { return new { error = "Invalid count" }; }
         }
 

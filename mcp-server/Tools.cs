@@ -331,7 +331,7 @@ public static class MemoryTools
     public static async Task<string> ReadTyped(
         [Description("Memory address (hex, e.g. 0x1234ABCD)")] string address,
         [Description("Value type: u8, i8, u16, i16, u32, i32, u64, i64, f32, f64, ptr")] string type,
-        [Description("Number of sequential values to read (default 1, max 256). Each value is read at address + i*sizeof(type).")] int? count = null)
+        [Description("Number of sequential values to read (default 1, max 50). Each value is read at address + i*sizeof(type).")] int? count = null)
         => await Http.Get("/api/memory/typed", new() { ["address"] = address, ["type"] = type, ["count"] = count?.ToString() });
 }
 
