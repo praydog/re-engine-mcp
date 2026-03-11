@@ -15,7 +15,7 @@ The [web dashboard](#web-dashboard) -- player stats, enemy lists, inventory, Mr.
 
 - [REFramework nightly build](https://github.com/praydog/REFramework-nightly/releases) installed for your game. **You must use a nightly build** -- stable releases do not include .NET support.
 - `csharp-api.zip` from the [same nightly releases page](https://github.com/praydog/REFramework-nightly/releases). Extract it into your game's `reframework/` folder to get the .NET runtime and reference assemblies the plugin needs.
-- [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) -- required by the C# API and the MCP server. Install the SDK if you want to build the MCP server from source, or just the runtime if using a pre-built release.
+- [.NET 10 runtime and SDK](https://dotnet.microsoft.com/download/dotnet/10.0) -- required by the C# API and the MCP server. Install the SDK if you want to build the MCP server from source, or just the runtime if using a pre-built release.
 
 ### 1. Install the game plugin
 
